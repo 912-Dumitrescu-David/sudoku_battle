@@ -16,6 +16,7 @@ class SudokuProvider extends ChangeNotifier {
 
   // Define maximum mistakes allowed (you can adjust this)
   final int maxMistakes = 3;
+  int solvedCells = 0;
 
   SudokuProvider() {
     _board = List.generate(9, (_) => List.filled(9, null));
@@ -29,6 +30,8 @@ class SudokuProvider extends ChangeNotifier {
   List<List<bool>> get errorCells => _errorCells;
   int? get selectedRow => _selectedRow;
   int? get selectedCol => _selectedCol;
+  int get mistakes => _mistakesCount;
+  int get solved => solvedCells;
 
   /// Generate a new puzzle using the sudoku_solver_generator package.
   void generatePuzzle({required int emptyCells}) {
@@ -72,6 +75,7 @@ class SudokuProvider extends ChangeNotifier {
       if (number == _solution[row][col]) {
         // If correct, clear any previous error.
         _errorCells[row][col] = false;
+        solvedCells++;
       } else {
         // Wrong input: mark error and increment mistakes.
         _errorCells[row][col] = true;
