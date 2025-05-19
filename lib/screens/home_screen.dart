@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:sudoku_battle/screens/profile_screen.dart';
+import '../providers/theme_provider.dart';
 import 'difficulty_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -28,9 +29,10 @@ class HomeScreen extends StatelessWidget {
           IconButton(
             icon: CircleAvatar(
               radius: 16,
-              backgroundImage: (user?.photoURL != null && user!.photoURL!.isNotEmpty)
-                  ? NetworkImage(user!.photoURL!)
-                  : null,
+              backgroundImage:
+                  (user?.photoURL != null && user!.photoURL!.isNotEmpty)
+                      ? NetworkImage(user!.photoURL!)
+                      : null,
               child: (user?.photoURL == null || user!.photoURL!.isEmpty)
                   ? const Icon(Icons.person)
                   : null,
@@ -41,8 +43,14 @@ class HomeScreen extends StatelessWidget {
               );
             },
           ),
+          IconButton(
+            icon: Icon(Icons.brightness_6),
+            tooltip: 'Toggle theme',
+            onPressed: () {
+              Provider.of<ThemeProvider>(context, listen: false).toggleTheme();
+            },
+          ),
         ],
-
       ),
       body: Center(
         child: Column(
@@ -60,7 +68,6 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
       ),
-
     );
   }
 }

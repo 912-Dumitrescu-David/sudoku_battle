@@ -114,4 +114,15 @@ class SudokuProvider extends ChangeNotifier {
     return true;
   }
 
+  void resetMistakes() {
+    _mistakesCount = 0;
+    notifyListeners();
+  }
+
+  void resertSolvedCells() {
+    solvedCells = 0;
+    notifyListeners();
+  }
+
+
 }

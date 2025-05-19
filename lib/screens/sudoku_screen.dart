@@ -7,6 +7,12 @@ import 'package:sudoku_battle/screens/result_screen.dart';
 import 'package:sudoku_battle/widgets/sudoku_board.dart';
 import 'package:sudoku_battle/widgets/number_keypad.dart';
 
+import '../providers/theme_provider.dart';
+
+import 'package:sudoku_battle/widgets/mistake_counter.dart';
+import 'package:sudoku_battle/widgets/timer.dart';
+import 'package:sudoku_battle/widgets/correct_counter.dart';
+
 class SudokuScreen extends StatefulWidget {
   final String difficulty;
   final int emptyCells;
@@ -72,6 +78,16 @@ class _SudokuScreenState extends State<SudokuScreen> {
             tooltip: 'New Puzzle',
             onPressed: () {
               sudokuProvider.generatePuzzle(emptyCells: widget.emptyCells);
+              _stopwatch.reset();
+              sudokuProvider.resetMistakes();
+              sudokuProvider.resertSolvedCells();
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.brightness_6),
+            tooltip: 'Toggle theme',
+            onPressed: () {
+              Provider.of<ThemeProvider>(context, listen: false).toggleTheme();
             },
           ),
         ],
@@ -84,7 +100,12 @@ class _SudokuScreenState extends State<SudokuScreen> {
               _stopGame();
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (_) => ResultScreen(isWin: false, time: _formattedTime , solvedBlocks: provider.solved, totalToSolve: widget.emptyCells)),
+                MaterialPageRoute(
+                    builder: (_) => ResultScreen(
+                        isWin: false,
+                        time: _formattedTime,
+                        solvedBlocks: provider.solved,
+                        totalToSolve: widget.emptyCells)),
               );
             });
           } else if (provider.isSolved) {
@@ -92,47 +113,29 @@ class _SudokuScreenState extends State<SudokuScreen> {
               _stopGame();
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (_) => ResultScreen(isWin: true, time: _formattedTime , solvedBlocks: provider.solved, totalToSolve: widget.emptyCells)),
+                MaterialPageRoute(
+                    builder: (_) => ResultScreen(
+                        isWin: true,
+                        time: _formattedTime,
+                        solvedBlocks: provider.solved,
+                        totalToSolve: widget.emptyCells)),
               );
             });
           }
 
           return Column(
             children: [
-              // Mistakes counter display.
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Text(
-                  'Mistakes: ${provider.mistakesCount} / ${provider.maxMistakes}',
-                  style: const TextStyle(fontSize: 16, color: Colors.red),
-                ),
+              SudokuMistakesCounter(
+                mistakes: provider.mistakesCount,
+                maxMistakes: provider.maxMistakes,
               ),
-              Padding(padding: const EdgeInsets.all(8.0),
-              child:
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.timer, color: Colors.blue),
-                  const SizedBox(width: 4),
-                  Text(
-                    _formattedTime,
-                    style: const TextStyle(fontSize: 16, color: Colors.blue),
-                  ),
-                ],
-              ),),
-              Padding(padding: const EdgeInsets.all(8.0),
-              child:
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.green),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Correct: ${provider.solved} / ${widget.emptyCells}',
-                    style: const TextStyle(fontSize: 16, color: Colors.green),
-                  ),
-                ],
-              ),),
+              SudokuTimerDisplay(
+                time: _formattedTime,
+              ),
+              SudokuCorrectCounter(
+                solved: provider.solved,
+                totalToSolve: widget.emptyCells,
+              ),
               Expanded(
                 flex: 4,
                 child: Padding(

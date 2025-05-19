@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sudoku_battle/providers/sudoku_provider.dart';
+import 'package:sudoku_battle/providers/theme_provider.dart';
+
 
 class SudokuBoard extends StatelessWidget {
   const SudokuBoard({Key? key}) : super(key: key);
@@ -13,6 +15,7 @@ class SudokuBoard extends StatelessWidget {
     final errorCells = sudokuProvider.errorCells;
     final selectedRow = sudokuProvider.selectedRow;
     final selectedCol = sudokuProvider.selectedCol;
+    final theme = Theme.of(context);
 
     return AspectRatio(
       aspectRatio: 1,
@@ -28,12 +31,23 @@ class SudokuBoard extends StatelessWidget {
           bool isSelected = (row == selectedRow && col == selectedCol);
           bool isError = errorCells[row][col];
 
+          // Bold outline every 3rd cell, thin otherwise
+          BorderSide bold = BorderSide(color: theme.dividerColor, width: 2);
+          BorderSide normal = BorderSide(color: theme.dividerColor, width: 0.5);
+
           return GestureDetector(
             onTap: () => sudokuProvider.selectCell(row, col),
             child: Container(
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.black54, width: 0.5),
-                color: isSelected ? Colors.lightBlueAccent.withOpacity(0.3) : Colors.white,
+                border: Border(
+                  top: row % 3 == 0 ? bold : normal,
+                  left: col % 3 == 0 ? bold : normal,
+                  right: (col + 1) % 3 == 0 ? bold : normal,
+                  bottom: (row + 1) % 3 == 0 ? bold : normal,
+                ),
+                color: isSelected
+                    ? theme.colorScheme.primary.withOpacity(0.3)
+                    : theme.colorScheme.surface,
               ),
               child: Center(
                 child: Text(
@@ -42,11 +56,13 @@ class SudokuBoard extends StatelessWidget {
                       : board[row][col].toString(),
                   style: TextStyle(
                     fontSize: 20,
-                    fontWeight: givenCells[row][col] ? FontWeight.bold : FontWeight.normal,
-                    // If the cell is marked as an error, display red text.
+                    fontWeight:
+                    givenCells[row][col] ? FontWeight.bold : FontWeight.normal,
                     color: isError
-                        ? Colors.red
-                        : (givenCells[row][col] ? Colors.black : Colors.blue),
+                        ? theme.colorScheme.error
+                        : (givenCells[row][col]
+                        ? theme.colorScheme.onSurface
+                        : theme.colorScheme.primary),
                   ),
                 ),
               ),
@@ -56,4 +72,5 @@ class SudokuBoard extends StatelessWidget {
       ),
     );
   }
+
 }

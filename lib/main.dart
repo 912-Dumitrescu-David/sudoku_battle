@@ -6,6 +6,7 @@ import 'package:sudoku_battle/screens/auth_screen.dart';
 import 'package:sudoku_battle/screens/home_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
+import 'package:sudoku_battle/providers/theme_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,7 +17,7 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => SudokuProvider()),
-        // Add other providers here if you have them
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
       child: SudokuBattleApp(),
     ),
@@ -29,8 +30,10 @@ class SudokuBattleApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
     return MaterialApp(
       title: 'Sudoku Battle',
+      theme: themeProvider.themeData,
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {

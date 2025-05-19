@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "786885723364",
+    "project_id": "sudoku-battle-cluj",
+    "storage_bucket": "sudoku-battle-cluj.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:786885723364:android:154f95432b8d1a17b458f1",
+        "android_client_info": {
+          "package_name": "com.example.sudoku_battle"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCRIMH76vQlBkqwPfJV_GMx7EI4b2OdeyM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

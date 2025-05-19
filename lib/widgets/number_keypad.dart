@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sudoku_battle/providers/sudoku_provider.dart';
+import 'package:sudoku_battle/providers/theme_provider.dart';
 
 class NumberKeypad extends StatelessWidget {
   const NumberKeypad({Key? key}) : super(key: key);
@@ -12,6 +13,7 @@ class NumberKeypad extends StatelessWidget {
     final screenHeight = MediaQuery.of(context).size.height;
     // Adjust keypad height to about 12% of the screen height
     final keypadHeight = screenHeight * 0.12;
+    final theme = Theme.of(context);
 
     return Container(
       height: keypadHeight,
@@ -27,7 +29,7 @@ class NumberKeypad extends StatelessWidget {
             child: Container(
               margin: const EdgeInsets.all(4.0),
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.black54),
+                border: Border.all(color: theme.dividerColor, width: 1),
                 borderRadius: BorderRadius.circular(4),
               ),
               // Wrap the Column with a FittedBox to scale the contents down if needed

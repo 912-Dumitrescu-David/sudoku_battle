@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/theme_provider.dart';
 
 class ResultScreen extends StatelessWidget {
   final bool isWin; // true for win, false for fail
@@ -20,6 +23,15 @@ class ResultScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(isWin ? 'Congratulations!' : 'Game Over'),
         backgroundColor: isWin ? Colors.green : Colors.red,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.brightness_6),
+            tooltip: 'Toggle theme',
+            onPressed: () {
+              Provider.of<ThemeProvider>(context, listen: false).toggleTheme();
+            },
+          ),
+        ],
       ),
       body: Center(
         child: Column(
