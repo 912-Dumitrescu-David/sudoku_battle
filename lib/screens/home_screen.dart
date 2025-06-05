@@ -1,20 +1,20 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sudoku_battle/screens/lobby_home_screen.dart';
 import 'package:sudoku_battle/screens/profile_screen.dart';
 import '../providers/theme_provider.dart';
 import 'difficulty_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
-  void _goToClassicMode(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const DifficultyScreen()),
-    );
-  }
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
+class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -24,23 +24,25 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sudoku Battle'),
-        // For example, in your HomeScreen's AppBar:
         actions: [
           IconButton(
             icon: CircleAvatar(
               radius: 16,
               backgroundImage:
-                  (user?.photoURL != null && user!.photoURL!.isNotEmpty)
-                      ? NetworkImage(user!.photoURL!)
-                      : null,
+              (user?.photoURL != null && user!.photoURL!.isNotEmpty)
+                  ? NetworkImage(user!.photoURL!)
+                  : null,
               child: (user?.photoURL == null || user!.photoURL!.isEmpty)
                   ? const Icon(Icons.person)
                   : null,
             ),
-            onPressed: () {
-              Navigator.of(context).push(
+            onPressed: () async {
+              final shouldRefresh = await Navigator.of(context).push(
                 MaterialPageRoute(builder: (context) => const ProfileScreen()),
               );
+              if (shouldRefresh == true) {
+                setState(() {}); // Refresh HomeScreen to show updated info
+              }
             },
           ),
           IconButton(
@@ -65,9 +67,29 @@ class HomeScreen extends StatelessWidget {
               onPressed: () => _goToClassicMode(context),
               child: const Text('Classic Mode'),
             ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                _goToMultiplayer(context);
+              },
+              child: const Text('Multiplayer'),
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  void _goToClassicMode(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const DifficultyScreen()),
+    );
+  }
+  void _goToMultiplayer(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => LobbyHomeScreen()),
     );
   }
 }

@@ -20,6 +20,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final _usernameController = TextEditingController();
   bool _isLoading = false;
+  bool _profileChanged = false;
 
   @override
   void initState() {
@@ -75,6 +76,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         SnackBar(content: Text('Failed to update username')),
       );
     }
+    setState(() {
+      _profileChanged = true; // <--- Profile changed!
+    });
     setState(() => _isLoading = false);
   }
 
@@ -122,7 +126,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await user?.updatePhotoURL(photoURL);
       await user?.reload();
 
-      setState(() {});
+      setState(() {
+        _profileChanged = true; // <--- Profile changed!
+      });
       setState(() => _isLoading = false);
     }
   }
@@ -133,6 +139,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back),
+          onPressed: () {
+            Navigator.pop(context, _profileChanged);
+          },
+        ),
         title: const Text('Profile'),
         actions: [
           IconButton(
