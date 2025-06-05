@@ -10,11 +10,13 @@ class DifficultyScreen extends StatelessWidget {
   int _emptyCellsCount(String difficulty) {
     switch (difficulty) {
       case 'Easy':
-        return 40; // fewer empty cells = easier puzzle
+        return 40;
       case 'Medium':
         return 50;
       case 'Hard':
         return 54;
+      case 'Expert':
+        return 60;
       default:
         return 50;
     }
@@ -63,6 +65,10 @@ class DifficultyScreen extends StatelessWidget {
             ElevatedButton(
               onPressed: () => _startGame(context, 'Hard'),
               child: const Text('Hard'),
+            ),
+            ElevatedButton(
+              onPressed: () => _startGame(context, 'Expert'),
+              child: const Text('Expert'),
             ),
           ],
         ),

@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:sudoku_battle/screens/lobby_home_screen.dart';
+import 'package:sudoku_battle/screens/lobby_screen.dart';
 import 'package:sudoku_battle/screens/profile_screen.dart';
 import '../providers/theme_provider.dart';
 import 'difficulty_screen.dart';
@@ -89,7 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _goToMultiplayer(BuildContext context) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => LobbyHomeScreen()),
+      MaterialPageRoute(builder: (context) => LobbyScreen()),
     );
   }
 }

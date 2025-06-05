@@ -1,52 +1,239 @@
-class Lobby {
-  final String id; // 6-digit code or Firestore doc id
-  final String type; // 'public' or 'private'
-  final String hostUid;
-  final String hostUsername;
-  final String? guestUid;
-  final String? guestUsername;
-  final String status; // 'waiting', 'full', 'started'
-  final String? puzzle; // JSON or String
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-  Lobby({
+enum LobbyStatus { waiting, starting, inProgress, completed }
+enum GameMode { classic, powerup, tournament }
+
+class Player {
+  final String id;
+  final String name;
+  final String? avatarUrl;
+  final int rating;
+  final DateTime joinedAt;
+
+  Player({
     required this.id,
-    required this.type,
-    required this.hostUid,
-    required this.hostUsername,
-    this.guestUid,
-    this.guestUsername,
-    required this.status,
-    this.puzzle,
+    required this.name,
+    this.avatarUrl,
+    required this.rating,
+    required this.joinedAt,
   });
+
+  factory Player.fromMap(Map<String, dynamic> map) {
+    return Player(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      avatarUrl: map['avatarUrl'],
+      rating: map['rating'] ?? 1000,
+      joinedAt: DateTime.fromMillisecondsSinceEpoch(map['joinedAt'] ?? 0),
+    );
+  }
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'type': type,
-      'hostUid': hostUid,
-      'hostUsername': hostUsername,
-      'guestUid': guestUid,
-      'guestUsername': guestUsername,
-      'status': status,
-      'puzzle': puzzle,
-      'createdAt': DateTime.now(),
+      'name': name,
+      'avatarUrl': avatarUrl,
+      'rating': rating,
+      'joinedAt': joinedAt.millisecondsSinceEpoch,
     };
   }
+}
 
-  factory Lobby.fromMap(Map<String, dynamic> map) {
-    return Lobby(
-      id: map['id'] ?? '',
-      type: map['type'] ?? 'public',
-      hostUid: map['hostUid'] ?? '',
-      hostUsername: map['hostUsername'] ?? '',
-      guestUid: map['guestUid'],
-      guestUsername: map['guestUsername'],
-      status: map['status'] ?? 'waiting',
-      puzzle: map['puzzle'],
+class GameSettings {
+  final int? timeLimit; // in seconds, null for no limit
+  final bool allowHints;
+  final bool allowMistakes;
+  final int maxMistakes;
+  final String difficulty;
+
+  GameSettings({
+    this.timeLimit,
+    this.allowHints = true,
+    this.allowMistakes = true,
+    this.maxMistakes = 3,
+    this.difficulty = 'medium',
+  });
+
+  factory GameSettings.fromMap(Map<String, dynamic> map) {
+    return GameSettings(
+      timeLimit: map['timeLimit'],
+      allowHints: map['allowHints'] ?? true,
+      allowMistakes: map['allowMistakes'] ?? true,
+      maxMistakes: map['maxMistakes'] ?? 3,
+      difficulty: map['difficulty'] ?? 'medium',
     );
   }
 
-  //tojson
+  Map<String, dynamic> toMap() {
+    return {
+      'timeLimit': timeLimit,
+      'allowHints': allowHints,
+      'allowMistakes': allowMistakes,
+      'maxMistakes': maxMistakes,
+      'difficulty': difficulty,
+    };
+  }
+}
 
+class Lobby {
+  final String id;
+  final String hostPlayerId;
+  final String hostPlayerName;
+  final GameMode gameMode;
+  final bool isPrivate;
+  final String? accessCode;
+  final int maxPlayers;
+  final int currentPlayers;
+  final List<Player> playersList;
+  final GameSettings gameSettings;
+  final LobbyStatus status;
+  final DateTime createdAt;
+  final DateTime? startedAt;
+  final String? gameSessionId;
+  final String? gameServerEndpoint;
+  final Map<String, dynamic>? sharedPuzzle; // Add shared puzzle
 
+  Lobby({
+    required this.id,
+    required this.hostPlayerId,
+    required this.hostPlayerName,
+    required this.gameMode,
+    required this.isPrivate,
+    this.accessCode,
+    required this.maxPlayers,
+    required this.currentPlayers,
+    required this.playersList,
+    required this.gameSettings,
+    required this.status,
+    required this.createdAt,
+    this.startedAt,
+    this.gameSessionId,
+    this.gameServerEndpoint,
+    this.sharedPuzzle, // Add to constructor
+  });
+
+  factory Lobby.fromFirestore(DocumentSnapshot doc) {
+    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+
+    return Lobby(
+      id: doc.id,
+      hostPlayerId: data['hostPlayerId'] ?? '',
+      hostPlayerName: data['hostPlayerName'] ?? '',
+      gameMode: _getGameModeFromString(data['gameMode'] ?? 'classic'),
+      isPrivate: data['isPrivate'] ?? false,
+      accessCode: data['accessCode'],
+      maxPlayers: data['maxPlayers'] ?? 2,
+      currentPlayers: data['currentPlayers'] ?? 0,
+      playersList: (data['playersList'] as List<dynamic>?)
+          ?.map((player) => Player.fromMap(player as Map<String, dynamic>))
+          .toList() ?? [],
+      gameSettings: GameSettings.fromMap(data['gameSettings'] ?? {}),
+      status: _getLobbyStatusFromString(data['status'] ?? 'waiting'),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(data['createdAt'] ?? 0),
+      startedAt: data['startedAt'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(data['startedAt'])
+          : null,
+      gameSessionId: data['gameSessionId'],
+      gameServerEndpoint: data['gameServerEndpoint'],
+      sharedPuzzle: data['sharedPuzzle'] as Map<String, dynamic>?, // Add this line
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'hostPlayerId': hostPlayerId,
+      'hostPlayerName': hostPlayerName,
+      'gameMode': gameMode.toString().split('.').last,
+      'isPrivate': isPrivate,
+      'accessCode': accessCode,
+      'maxPlayers': maxPlayers,
+      'currentPlayers': currentPlayers,
+      'playersList': playersList.map((player) => player.toMap()).toList(),
+      'gameSettings': gameSettings.toMap(),
+      'status': status.toString().split('.').last,
+      'createdAt': createdAt.millisecondsSinceEpoch,
+      'startedAt': startedAt?.millisecondsSinceEpoch,
+      'gameSessionId': gameSessionId,
+      'gameServerEndpoint': gameServerEndpoint,
+      'sharedPuzzle': sharedPuzzle, // Add this line
+    };
+  }
+
+  static GameMode _getGameModeFromString(String mode) {
+    switch (mode.toLowerCase()) {
+      case 'classic':
+        return GameMode.classic;
+      case 'powerup':
+        return GameMode.powerup;
+      case 'tournament':
+        return GameMode.tournament;
+      default:
+        return GameMode.classic;
+    }
+  }
+
+  static LobbyStatus _getLobbyStatusFromString(String status) {
+    switch (status.toLowerCase()) {
+      case 'waiting':
+        return LobbyStatus.waiting;
+      case 'starting':
+        return LobbyStatus.starting;
+      case 'inprogress':
+        return LobbyStatus.inProgress;
+      case 'completed':
+        return LobbyStatus.completed;
+      default:
+        return LobbyStatus.waiting;
+    }
+  }
+
+  Lobby copyWith({
+    String? id,
+    String? hostPlayerId,
+    String? hostPlayerName,
+    GameMode? gameMode,
+    bool? isPrivate,
+    String? accessCode,
+    int? maxPlayers,
+    int? currentPlayers,
+    List<Player>? playersList,
+    GameSettings? gameSettings,
+    LobbyStatus? status,
+    DateTime? createdAt,
+    DateTime? startedAt,
+    String? gameSessionId,
+    String? gameServerEndpoint,
+  }) {
+    return Lobby(
+      id: id ?? this.id,
+      hostPlayerId: hostPlayerId ?? this.hostPlayerId,
+      hostPlayerName: hostPlayerName ?? this.hostPlayerName,
+      gameMode: gameMode ?? this.gameMode,
+      isPrivate: isPrivate ?? this.isPrivate,
+      accessCode: accessCode ?? this.accessCode,
+      maxPlayers: maxPlayers ?? this.maxPlayers,
+      currentPlayers: currentPlayers ?? this.currentPlayers,
+      playersList: playersList ?? this.playersList,
+      gameSettings: gameSettings ?? this.gameSettings,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      startedAt: startedAt ?? this.startedAt,
+      gameSessionId: gameSessionId ?? this.gameSessionId,
+      gameServerEndpoint: gameServerEndpoint ?? this.gameServerEndpoint,
+    );
+  }
+}
+
+class LobbyCreationRequest {
+  final GameMode gameMode;
+  final bool isPrivate;
+  final int maxPlayers;
+  final GameSettings gameSettings;
+
+  LobbyCreationRequest({
+    required this.gameMode,
+    required this.isPrivate,
+    required this.maxPlayers,
+    required this.gameSettings,
+  });
 }

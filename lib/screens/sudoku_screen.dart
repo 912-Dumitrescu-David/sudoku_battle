@@ -80,7 +80,7 @@ class _SudokuScreenState extends State<SudokuScreen> {
               sudokuProvider.generatePuzzle(emptyCells: widget.emptyCells);
               _stopwatch.reset();
               sudokuProvider.resetMistakes();
-              sudokuProvider.resertSolvedCells();
+              sudokuProvider.resetSolvedCells();
             },
           ),
           IconButton(
