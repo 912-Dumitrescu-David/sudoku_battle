@@ -4,8 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/lobby_model.dart';
 import '../providers/lobby_provider.dart';
-import '../models/lobby_model.dart';
-import '../utils/sudoku_engine.dart';
 import 'multiplayer_sudoku_screen.dart';
 
 class LobbyDetailScreen extends StatefulWidget {
@@ -19,6 +17,7 @@ class LobbyDetailScreen extends StatefulWidget {
 
 class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
   bool _hasNavigatedToGame = false;
+
   @override
   void initState() {
     super.initState();
@@ -82,6 +81,8 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                           SizedBox(height: 24),
                           _buildAccessCodeSection(lobby),
                         ],
+                        SizedBox(height: 24),
+                        _buildPuzzleInfo(lobby), // Add puzzle info section
                       ],
                     ),
                   ),
@@ -90,6 +91,84 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPuzzleInfo(Lobby lobby) {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.extension, color: Theme.of(context).primaryColor),
+                SizedBox(width: 8),
+                Text(
+                  'Puzzle Information',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Puzzle Status:'),
+                Row(
+                  children: [
+                    Icon(
+                      lobby.sharedPuzzle != null ? Icons.check_circle : Icons.error,
+                      color: lobby.sharedPuzzle != null ? Colors.green : Colors.red,
+                      size: 16,
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      lobby.sharedPuzzle != null ? 'Ready' : 'Not Generated',
+                      style: TextStyle(
+                        color: lobby.sharedPuzzle != null ? Colors.green : Colors.red,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            if (lobby.sharedPuzzle != null) ...[
+              SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Puzzle ID:'),
+                  Text(
+                    lobby.sharedPuzzle!['id']?.toString().split('_').last.substring(0, 8) ?? 'Unknown',
+                    style: TextStyle(fontFamily: 'monospace'),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Difficulty:'),
+                  Text(
+                    lobby.sharedPuzzle!['difficulty']?.toString().toUpperCase() ?? 'Unknown',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ],
+            SizedBox(height: 8),
+            Text(
+              'All players will play the same puzzle when the game starts.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -376,6 +455,11 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
   }
 
   Widget _buildBottomActions(Lobby lobby, LobbyProvider lobbyProvider) {
+    final canStart = lobbyProvider.isHost &&
+        lobby.status == LobbyStatus.waiting &&
+        lobby.currentPlayers >= 2 &&
+        lobby.sharedPuzzle != null; // Add puzzle check
+
     return Container(
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -407,14 +491,15 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
             SizedBox(width: 16),
             Expanded(
               child: ElevatedButton(
-                onPressed: lobby.currentPlayers >= 2 ? _startGame : null,
+                onPressed: canStart ? _startGame : null,
                 child: lobbyProvider.isLoading
                     ? SizedBox(
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-                    : Text('Start Game'),
+                    : Text(canStart ? 'Start Game' :
+                lobby.sharedPuzzle == null ? 'Generating Puzzle...' : 'Need 2+ Players'),
                 style: ElevatedButton.styleFrom(
                   padding: EdgeInsets.symmetric(vertical: 12),
                 ),
@@ -566,8 +651,18 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
 
     print('🎮 Navigating to game for lobby: ${lobby.id}');
 
-    // Generate puzzle locally (each player generates the same puzzle using lobby ID as seed)
-    Map<String, dynamic> puzzle = _generateDeterministicPuzzle(lobby);
+    // Use shared puzzle from Firestore
+    Map<String, dynamic> puzzle;
+    if (lobby.sharedPuzzle != null && lobby.sharedPuzzle!.isNotEmpty) {
+      print('✅ Found shared puzzle from Firestore');
+      puzzle = _convertFirestorePuzzleToGameFormat(lobby.sharedPuzzle!);
+      print('Converted puzzle ID: ${puzzle['id']}');
+      print('Difficulty: ${puzzle['difficulty']}');
+    } else {
+      print('⚠️ No shared puzzle found, using fallback');
+      // Fallback: generate deterministic puzzle
+      puzzle = _generateFallbackPuzzle();
+    }
 
     // Navigate to multiplayer game screen
     Navigator.pushReplacement(
@@ -581,15 +676,41 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
     );
   }
 
-  // Generate the same puzzle for all players using lobby ID as seed
-  Map<String, dynamic> _generateDeterministicPuzzle(Lobby lobby) {
-    // Use lobby ID to create a deterministic seed
-    final lobbyIdHash = lobby.id.hashCode;
+  // Convert Firestore puzzle data to game format
+  Map<String, dynamic> _convertFirestorePuzzleToGameFormat(Map<String, dynamic> firestorePuzzle) {
+    try {
+      // Convert flattened arrays back to 2D format
+      final puzzleFlat = (firestorePuzzle['puzzleFlat'] as List).cast<int>();
+      final solutionFlat = (firestorePuzzle['solutionFlat'] as List).cast<int>();
 
-    // For now, use a simple deterministic puzzle based on lobby ID
-    // This ensures all players get the same puzzle
+      // Reshape from 1D to 2D (9x9)
+      final puzzle = <List<int>>[];
+      final solution = <List<int>>[];
 
-    // Simple deterministic puzzle (same for all players in this lobby)
+      for (int i = 0; i < 9; i++) {
+        final puzzleRow = puzzleFlat.sublist(i * 9, (i + 1) * 9);
+        final solutionRow = solutionFlat.sublist(i * 9, (i + 1) * 9);
+        puzzle.add(puzzleRow);
+        solution.add(solutionRow);
+      }
+
+      return {
+        'puzzle': puzzle,
+        'solution': solution,
+        'difficulty': firestorePuzzle['difficulty'] ?? 'medium',
+        'id': firestorePuzzle['id'] ?? 'shared-puzzle',
+        'createdAt': firestorePuzzle['createdAt'] ?? DateTime.now().millisecondsSinceEpoch,
+      };
+    } catch (e) {
+      print('❌ Error converting Firestore puzzle: $e');
+      return _generateFallbackPuzzle();
+    }
+  }
+
+  // Fallback puzzle generation (only used if Firestore puzzle missing)
+  Map<String, dynamic> _generateFallbackPuzzle() {
+    print('🔄 Generating fallback deterministic puzzle');
+
     return {
       'puzzle': [
         [5, 3, 0, 0, 7, 0, 0, 0, 0],
@@ -613,12 +734,11 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
         [2, 8, 7, 4, 1, 9, 6, 3, 5],
         [3, 4, 5, 2, 8, 6, 1, 7, 9]
       ],
-      'difficulty': lobby.gameSettings.difficulty,
-      'id': 'lobby-${lobby.id}',
+      'difficulty': 'medium', // Default difficulty
+      'id': 'fallback-${DateTime.now().millisecondsSinceEpoch}',
       'createdAt': DateTime.now().millisecondsSinceEpoch,
     };
   }
-
 
   IconData _getGameModeIcon(GameMode mode) {
     switch (mode) {

@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import '../models/lobby_model.dart';
+import '../utils/sudoku_engine.dart';
 
 class LobbyService {
   // 🎯 Use your custom "lobbies" database instead of default
@@ -17,7 +18,7 @@ class LobbyService {
   static const String _usersCollection = 'users';            // ← Users collection
   static const String _gameResultsCollection = 'gameResults'; // ← Game results collection
 
-  // Create a new lobby
+  // Create a new lobby with puzzle generated immediately
   static Future<String> createLobby(LobbyCreationRequest request) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not authenticated');
@@ -25,6 +26,11 @@ class LobbyService {
     try {
       // Get user data
       final userData = await getUserData(user.uid);
+
+      // 🎯 Generate puzzle immediately when creating lobby
+      print('🎲 Generating puzzle for difficulty: ${request.gameSettings.difficulty}');
+      final sharedPuzzle = _generateSharedPuzzle(request.gameSettings.difficulty);
+      print('✅ Puzzle generated with ID: ${sharedPuzzle['id']}');
 
       final accessCode = request.isPrivate ? _generateAccessCode() : null;
 
@@ -37,7 +43,7 @@ class LobbyService {
         joinedAt: DateTime.now(),
       );
 
-      // Create lobby data map directly (avoid using Lobby class for creation)
+      // Create lobby data map with shared puzzle
       final lobbyData = {
         'hostPlayerId': user.uid,
         'hostPlayerName': hostPlayer.name,
@@ -53,9 +59,10 @@ class LobbyService {
         'startedAt': null,
         'gameSessionId': null,
         'gameServerEndpoint': null,
+        'sharedPuzzle': sharedPuzzle, // 🎯 Add puzzle here at creation time
       };
 
-      print('Creating lobby with data: $lobbyData');
+      print('Creating lobby with shared puzzle');
 
       final docRef = await _firestore
           .collection(_lobbiesCollection)
@@ -68,6 +75,92 @@ class LobbyService {
       print('Error creating lobby: $e');
       rethrow;
     }
+  }
+
+  // Generate shared puzzle using SudokuEngine with proper Firestore serialization
+  static Map<String, dynamic> _generateSharedPuzzle(String difficulty) {
+    try {
+      print('🎯 Generating puzzle with SudokuEngine for difficulty: $difficulty');
+
+      // Convert string to Difficulty enum
+      Difficulty difficultyEnum = _stringToDifficulty(difficulty);
+
+      // Generate puzzle using SudokuEngine
+      final rawPuzzleData = SudokuEngine.generatePuzzle(difficultyEnum);
+      print('✅ Raw puzzle generated');
+
+      // Extract puzzle and solution as List<List<int>>
+      final puzzle = rawPuzzleData['puzzle'] as List<List<int>>;
+      final solution = rawPuzzleData['solution'] as List<List<int>>;
+
+      // Flatten to 1D arrays for Firestore (avoid nested arrays)
+      final puzzleFlat = puzzle.expand((row) => row).toList();
+      final solutionFlat = solution.expand((row) => row).toList();
+
+      final firestorePuzzle = <String, dynamic>{
+        'puzzleFlat': puzzleFlat,     // Flattened 1D array (81 elements)
+        'solutionFlat': solutionFlat, // Flattened 1D array (81 elements)
+        'difficulty': difficulty,
+        'id': 'puzzle_${DateTime.now().millisecondsSinceEpoch}',
+        'createdAt': DateTime.now().millisecondsSinceEpoch,
+        'puzzleRows': 9,
+        'puzzleCols': 9,
+      };
+
+      print('✅ Puzzle prepared for Firestore storage');
+      print('Puzzle flattened: ${puzzleFlat.length} elements');
+      print('Solution flattened: ${solutionFlat.length} elements');
+
+      return firestorePuzzle;
+
+    } catch (e) {
+      print('❌ Error generating puzzle with SudokuEngine: $e');
+      print('Falling back to deterministic puzzle');
+      return _createDeterministicPuzzle(difficulty);
+    }
+  }
+
+  // Fallback deterministic puzzle if SudokuEngine fails
+  static Map<String, dynamic> _createDeterministicPuzzle(String difficulty) {
+    print('🔄 Creating deterministic fallback puzzle');
+
+    final basePuzzle = [
+      [5, 3, 0, 0, 7, 0, 0, 0, 0],
+      [6, 0, 0, 1, 9, 5, 0, 0, 0],
+      [0, 9, 8, 0, 0, 0, 0, 6, 0],
+      [8, 0, 0, 0, 6, 0, 0, 0, 3],
+      [4, 0, 0, 8, 0, 3, 0, 0, 1],
+      [7, 0, 0, 0, 2, 0, 0, 0, 6],
+      [0, 6, 0, 0, 0, 0, 2, 8, 0],
+      [0, 0, 0, 4, 1, 9, 0, 0, 5],
+      [0, 0, 0, 0, 8, 0, 0, 7, 9]
+    ];
+
+    final solution = [
+      [5, 3, 4, 6, 7, 8, 9, 1, 2],
+      [6, 7, 2, 1, 9, 5, 3, 4, 8],
+      [1, 9, 8, 3, 4, 2, 5, 6, 7],
+      [8, 5, 9, 7, 6, 1, 4, 2, 3],
+      [4, 2, 6, 8, 5, 3, 7, 9, 1],
+      [7, 1, 3, 9, 2, 4, 8, 5, 6],
+      [9, 6, 1, 5, 3, 7, 2, 8, 4],
+      [2, 8, 7, 4, 1, 9, 6, 3, 5],
+      [3, 4, 5, 2, 8, 6, 1, 7, 9]
+    ];
+
+    // Flatten for Firestore storage
+    final puzzleFlat = basePuzzle.expand((row) => row).toList();
+    final solutionFlat = solution.expand((row) => row).toList();
+
+    return {
+      'puzzleFlat': puzzleFlat,
+      'solutionFlat': solutionFlat,
+      'difficulty': difficulty,
+      'id': 'fallback_${DateTime.now().millisecondsSinceEpoch}',
+      'createdAt': DateTime.now().millisecondsSinceEpoch,
+      'puzzleRows': 9,
+      'puzzleCols': 9,
+    };
   }
 
   // Join a public lobby
@@ -186,7 +279,7 @@ class LobbyService {
     });
   }
 
-  // Get public lobbies stream (full query with index)
+  // Get public lobbies stream
   static Stream<List<Lobby>> getPublicLobbies() {
     return _firestore
         .collection(_lobbiesCollection)
@@ -209,7 +302,7 @@ class LobbyService {
         .map((doc) => doc.exists ? Lobby.fromFirestore(doc) : null);
   }
 
-  // Start game (host only) - Simple version without storing puzzle in Firestore
+  // Start game (host only) - Just change status since puzzle already exists
   static Future<void> startGame(String lobbyId) async {
     print('🎮 LobbyService.startGame called for lobby: $lobbyId');
 
@@ -235,11 +328,6 @@ class LobbyService {
 
         print('✅ Lobby document found');
         final lobby = Lobby.fromFirestore(lobbyDoc);
-        print('Lobby details:');
-        print('  - Host: ${lobby.hostPlayerId}');
-        print('  - Current user: ${user.uid}');
-        print('  - Player count: ${lobby.playersList.length}');
-        print('  - Status: ${lobby.status}');
 
         if (lobby.hostPlayerId != user.uid) {
           print('❌ User is not the host');
@@ -251,14 +339,22 @@ class LobbyService {
           throw Exception('Need at least 2 players to start');
         }
 
+        // Verify shared puzzle exists
+        if (lobby.sharedPuzzle == null || lobby.sharedPuzzle!.isEmpty) {
+          print('❌ No shared puzzle found');
+          throw Exception('No puzzle available for this lobby');
+        }
+
+        print('✅ Shared puzzle verified');
         print('🔄 Updating lobby status to starting...');
-        // Just update status - no puzzle data to avoid serialization issues
+
+        // Just update status since puzzle already exists
         transaction.update(lobbyRef, {
           'status': 'starting',
           'startedAt': DateTime.now().millisecondsSinceEpoch,
         });
 
-        print('✅ Lobby status updated successfully');
+        print('✅ Lobby status updated to starting');
       });
 
       print('✅ Transaction completed successfully');
@@ -266,113 +362,6 @@ class LobbyService {
       print('❌ Error in startGame: $e');
       rethrow;
     }
-  }
-
-  // Generate puzzle for sharing using actual SudokuEngine
-  static Map<String, dynamic> _generateSharedPuzzle(String difficulty) {
-    try {
-      print('🎯 Using fallback puzzle for testing (to avoid serialization issues)');
-      // Temporarily use fallback puzzle to test game flow
-      return _getFallbackPuzzle();
-
-      /* TODO: Fix SudokuEngine serialization and restore this code:
-      // Convert string to Difficulty enum
-      Difficulty difficultyEnum;
-      switch (difficulty.toLowerCase()) {
-        case 'easy':
-          difficultyEnum = Difficulty.easy;
-          break;
-        case 'medium':
-          difficultyEnum = Difficulty.medium;
-          break;
-        case 'hard':
-          difficultyEnum = Difficulty.hard;
-          break;
-        case 'expert':
-          difficultyEnum = Difficulty.expert;
-          break;
-        default:
-          difficultyEnum = Difficulty.medium;
-      }
-
-      // Use the actual SudokuEngine to generate puzzle
-      final puzzleData = SudokuEngine.generatePuzzle(difficultyEnum);
-
-      // Convert to Firestore-compatible format (ensure all data is serializable)
-      final firestoreCompatiblePuzzle = {
-        'puzzle': _convertToFirestoreList(puzzleData['puzzle']),
-        'solution': _convertToFirestoreList(puzzleData['solution']),
-        'difficulty': difficulty,
-        'id': puzzleData['id']?.toString() ?? _generatePuzzleId(),
-        'createdAt': puzzleData['createdAt'] ?? DateTime.now().millisecondsSinceEpoch,
-      };
-
-      print('✅ Generated shared puzzle with difficulty: $difficulty');
-      print('Puzzle data keys: ${firestoreCompatiblePuzzle.keys}');
-      return firestoreCompatiblePuzzle;
-      */
-
-    } catch (e) {
-      print('❌ Error generating puzzle: $e');
-      // Fallback to a simple puzzle if SudokuEngine fails
-      return _getFallbackPuzzle();
-    }
-  }
-
-  // Simple fallback puzzle (only used if SudokuEngine fails)
-  static Map<String, dynamic> _getFallbackPuzzle() {
-    return {
-      'puzzle': [
-        [5, 3, 0, 0, 7, 0, 0, 0, 0],
-        [6, 0, 0, 1, 9, 5, 0, 0, 0],
-        [0, 9, 8, 0, 0, 0, 0, 6, 0],
-        [8, 0, 0, 0, 6, 0, 0, 0, 3],
-        [4, 0, 0, 8, 0, 3, 0, 0, 1],
-        [7, 0, 0, 0, 2, 0, 0, 0, 6],
-        [0, 6, 0, 0, 0, 0, 2, 8, 0],
-        [0, 0, 0, 4, 1, 9, 0, 0, 5],
-        [0, 0, 0, 0, 8, 0, 0, 7, 9]
-      ],
-      'solution': [
-        [5, 3, 4, 6, 7, 8, 9, 1, 2],
-        [6, 7, 2, 1, 9, 5, 3, 4, 8],
-        [1, 9, 8, 3, 4, 2, 5, 6, 7],
-        [8, 5, 9, 7, 6, 1, 4, 2, 3],
-        [4, 2, 6, 8, 5, 3, 7, 9, 1],
-        [7, 1, 3, 9, 2, 4, 8, 5, 6],
-        [9, 6, 1, 5, 3, 7, 2, 8, 4],
-        [2, 8, 7, 4, 1, 9, 6, 3, 5],
-        [3, 4, 5, 2, 8, 6, 1, 7, 9]
-      ],
-      'difficulty': 'medium',
-      'id': _generatePuzzleId(),
-      'createdAt': DateTime.now().millisecondsSinceEpoch,
-    };
-  }
-
-  static String _generatePuzzleId() {
-    return DateTime.now().millisecondsSinceEpoch.toString() +
-        Random().nextInt(1000).toString();
-  }
-
-  // Update lobby with game session info
-  static Future<void> updateLobbyWithGameSession(
-      String lobbyId,
-      String gameSessionId,
-      String gameServerEndpoint
-      ) async {
-    await _firestore.collection(_lobbiesCollection).doc(lobbyId).update({
-      'status': 'inprogress',
-      'gameSessionId': gameSessionId,
-      'gameServerEndpoint': gameServerEndpoint,
-    });
-  }
-
-  // Complete game
-  static Future<void> completeGame(String lobbyId) async {
-    await _firestore.collection(_lobbiesCollection).doc(lobbyId).update({
-      'status': 'completed',
-    });
   }
 
   // Get user data with better offline handling
@@ -439,24 +428,6 @@ class LobbyService {
     return userData;
   }
 
-  // Clean up old lobbies (call periodically)
-  static Future<void> cleanupOldLobbies() async {
-    final cutoffTime = DateTime.now().subtract(Duration(hours: 1));
-
-    final oldLobbies = await _firestore
-        .collection(_lobbiesCollection)
-        .where('createdAt', isLessThan: cutoffTime.millisecondsSinceEpoch)
-        .where('status', whereIn: ['waiting', 'starting'])
-        .get();
-
-    final batch = _firestore.batch();
-    for (final doc in oldLobbies.docs) {
-      batch.delete(doc.reference);
-    }
-
-    await batch.commit();
-  }
-
   // Generate 6-character access code
   static String _generateAccessCode() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -479,5 +450,21 @@ class LobbyService {
         .map((snapshot) => snapshot.docs
         .map((doc) => Lobby.fromFirestore(doc))
         .toList());
+  }
+}
+
+// Helper function to convert string to Difficulty enum
+Difficulty _stringToDifficulty(String difficulty) {
+  switch (difficulty.toLowerCase()) {
+    case 'easy':
+      return Difficulty.easy;
+    case 'medium':
+      return Difficulty.medium;
+    case 'hard':
+      return Difficulty.hard;
+    case 'expert':
+      return Difficulty.expert;
+    default:
+      return Difficulty.medium; // Default fallback
   }
 }

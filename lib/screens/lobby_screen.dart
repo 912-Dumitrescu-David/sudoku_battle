@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/lobby_provider.dart';
 import '../models/lobby_model.dart';
+import '../providers/lobby_provider.dart';
+import '../utils/sudoku_engine.dart';
 import '../widgets/lobby_card.dart';
 import '../widgets/create_lobby_dialog.dart';
 import '../widgets/join_private_lobby_dialog.dart';
@@ -137,25 +138,44 @@ class _LobbyScreenState extends State<LobbyScreen> {
   Widget _buildActionButtons() {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: () => _showCreateLobbyDialog(),
-              icon: Icon(Icons.add),
-              label: Text('Create Lobby'),
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(vertical: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _showCreateLobbyDialog(),
+                  icon: Icon(Icons.add),
+                  label: Text('Create Lobby'),
+                  style: ElevatedButton.styleFrom(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
               ),
-            ),
+              SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _showJoinPrivateLobbyDialog(),
+                  icon: Icon(Icons.lock),
+                  label: Text('Join Private'),
+                  style: OutlinedButton.styleFrom(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
           ),
-          SizedBox(width: 12),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () => _showJoinPrivateLobbyDialog(),
-              icon: Icon(Icons.lock),
-              label: Text('Join Private'),
-              style: OutlinedButton.styleFrom(
+          SizedBox(height: 8),
+          // Temporary test button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _testSudokuEngine(),
+              icon: Icon(Icons.bug_report),
+              label: Text('Test SudokuEngine'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
                 padding: EdgeInsets.symmetric(vertical: 12),
               ),
             ),
@@ -163,6 +183,45 @@ class _LobbyScreenState extends State<LobbyScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _testSudokuEngine() async {
+    try {
+      print('🧪 Testing SudokuEngine...');
+
+      // Test each difficulty
+      for (final difficulty in [Difficulty.easy, Difficulty.medium, Difficulty.hard, Difficulty.expert]) {
+        print('Testing difficulty: $difficulty');
+
+        final puzzleData = SudokuEngine.generatePuzzle(difficulty);
+        print('✅ Generated puzzle for $difficulty');
+        print('Keys: ${puzzleData.keys}');
+        print('Puzzle type: ${puzzleData['puzzle'].runtimeType}');
+        print('Solution type: ${puzzleData['solution'].runtimeType}');
+
+        if (puzzleData['puzzle'] is List && puzzleData['solution'] is List) {
+          final puzzle = puzzleData['puzzle'] as List;
+          final solution = puzzleData['solution'] as List;
+          print('Puzzle size: ${puzzle.length}x${puzzle.isNotEmpty ? puzzle[0].length : 0}');
+          print('Solution size: ${solution.length}x${solution.isNotEmpty ? solution[0].length : 0}');
+        }
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ SudokuEngine test completed! Check console.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      print('❌ SudokuEngine test failed: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ SudokuEngine test failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Widget _buildLobbyList(LobbyProvider lobbyProvider) {
