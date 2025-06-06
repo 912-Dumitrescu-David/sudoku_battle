@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../utils/sudoku_engine.dart';
+import '../models/lobby_model.dart';
 
 class SudokuProvider extends ChangeNotifier {
   late List<List<int?>> _board;
@@ -13,9 +14,18 @@ class SudokuProvider extends ChangeNotifier {
   int _mistakesCount = 0;
   int get mistakesCount => _mistakesCount;
 
-  // Define maximum mistakes allowed (you can adjust this)
-  final int maxMistakes = 3;
+  // Maximum mistakes from game settings (default to 3)
+  int _maxMistakes = 3;
+  int get maxMistakes => _maxMistakes;
+
   int solvedCells = 0;
+
+  // Hints functionality
+  int _hintsRemaining = 3;
+  int get hintsRemaining => _hintsRemaining;
+
+  // Game settings
+  GameSettings? _gameSettings;
 
   SudokuProvider() {
     _board = List.generate(9, (_) => List.filled(9, null));
@@ -33,7 +43,20 @@ class SudokuProvider extends ChangeNotifier {
   int get solved => solvedCells;
 
   /// Generate a new puzzle using our custom SudokuEngine
-  void generatePuzzle({required int emptyCells}) {
+  void generatePuzzle({required int emptyCells, GameSettings? gameSettings}) {
+    // Store game settings
+    _gameSettings = gameSettings;
+
+    // Apply game settings
+    if (gameSettings != null) {
+      _maxMistakes = gameSettings.allowMistakes ? gameSettings.maxMistakes : 1;
+      _hintsRemaining = gameSettings.allowHints ? 3 : 0;
+    } else {
+      // Default values for classic mode
+      _maxMistakes = 3;
+      _hintsRemaining = 3;
+    }
+
     // Convert emptyCells to difficulty
     Difficulty difficulty;
     if (emptyCells <= 40) {
@@ -72,7 +95,20 @@ class SudokuProvider extends ChangeNotifier {
   }
 
   /// Generate puzzle from existing puzzle data (for multiplayer)
-  void loadPuzzle(Map<String, dynamic> puzzleData) {
+  void loadPuzzle(Map<String, dynamic> puzzleData, {GameSettings? gameSettings}) {
+    // Store game settings
+    _gameSettings = gameSettings;
+
+    // Apply game settings
+    if (gameSettings != null) {
+      _maxMistakes = gameSettings.allowMistakes ? gameSettings.maxMistakes : 1;
+      _hintsRemaining = gameSettings.allowHints ? 3 : 0;
+    } else {
+      // Default values
+      _maxMistakes = 3;
+      _hintsRemaining = 3;
+    }
+
     _solution = (puzzleData['solution'] as List).map<List<int>>((row) =>
         (row as List).cast<int>()).toList();
 
@@ -127,9 +163,15 @@ class SudokuProvider extends ChangeNotifier {
           solvedCells++;
         }
       } else {
-        // Wrong input
-        _errorCells[row][col] = true;
-        _mistakesCount++;
+        // Wrong input - only count as mistake if mistakes are enabled
+        if (_gameSettings?.allowMistakes ?? true) {
+          _errorCells[row][col] = true;
+          _mistakesCount++;
+        } else {
+          // If mistakes not allowed, still show error but don't increment counter
+          _errorCells[row][col] = true;
+        }
+
         if (wasPreviousCorrect) {
           solvedCells--;
         }
@@ -138,6 +180,60 @@ class SudokuProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  // HINT FUNCTIONALITY
+
+  /// Check if hint can be used
+  bool canUseHint() {
+    return _hintsRemaining > 0 &&
+        _selectedRow != null &&
+        _selectedCol != null &&
+        !_givenCells[_selectedRow!][_selectedCol!] &&
+        (_gameSettings?.allowHints ?? true);
+  }
+
+  /// Get hint for currently selected cell (only returns value if a hint was just used)
+  int? getHintForSelectedCell() {
+    // Don't show hint preview automatically
+    // This method is kept for compatibility but returns null
+    // The actual hint reveal happens in useHint()
+    return null;
+  }
+
+  /// Use a hint on the selected cell
+  void useHint() {
+    if (!canUseHint()) return;
+
+    final row = _selectedRow!;
+    final col = _selectedCol!;
+    final correctNumber = _solution[row][col];
+
+    // Store previous value to check if it was already correct
+    int? previousValue = _board[row][col];
+    bool wasPreviousCorrect = previousValue != null && previousValue == correctNumber;
+
+    // Set the correct number
+    _board[row][col] = correctNumber;
+    _errorCells[row][col] = false;
+
+    // Update solved cells count
+    if (!wasPreviousCorrect) {
+      solvedCells++;
+    }
+
+    // Decrease hints remaining
+    _hintsRemaining--;
+
+    notifyListeners();
+  }
+
+  /// Reset hints to default value
+  void resetHints() {
+    _hintsRemaining = (_gameSettings?.allowHints ?? true) ? 3 : 0;
+    notifyListeners();
+  }
+
+  // EXISTING METHODS (updated to work with game settings)
 
   /// Validate a move (for multiplayer sync)
   bool isValidMove(int row, int col, int number) {

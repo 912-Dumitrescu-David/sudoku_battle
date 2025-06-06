@@ -6,21 +6,29 @@ import 'package:sudoku_battle/providers/sudoku_provider.dart';
 import 'package:sudoku_battle/screens/result_screen.dart';
 import 'package:sudoku_battle/widgets/sudoku_board.dart';
 import 'package:sudoku_battle/widgets/number_keypad.dart';
+import 'package:sudoku_battle/models/lobby_model.dart';
 
 import '../providers/theme_provider.dart';
 
 import 'package:sudoku_battle/widgets/mistake_counter.dart';
 import 'package:sudoku_battle/widgets/timer.dart';
 import 'package:sudoku_battle/widgets/correct_counter.dart';
+import 'package:sudoku_battle/widgets/hint_widget.dart';
 
 class SudokuScreen extends StatefulWidget {
   final String difficulty;
   final int emptyCells;
+  final bool allowHints;
+  final bool allowMistakes;
+  final int maxMistakes;
 
   const SudokuScreen({
     Key? key,
     required this.difficulty,
     required this.emptyCells,
+    this.allowHints = true,
+    this.allowMistakes = true,
+    this.maxMistakes = 3,
   }) : super(key: key);
 
   @override
@@ -41,16 +49,28 @@ class _SudokuScreenState extends State<SudokuScreen> {
       setState(() {
         final elapsed = _stopwatch.elapsed;
         final minutes =
-            elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
+        elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
         final seconds =
-            elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
+        elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
         _formattedTime = '$minutes:$seconds';
       });
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Create game settings using the parameters passed from difficulty screen
+      final gameSettings = GameSettings(
+        timeLimit: null, // No time limit for classic mode
+        allowHints: widget.allowHints,
+        allowMistakes: widget.allowMistakes,
+        maxMistakes: widget.maxMistakes,
+        difficulty: widget.difficulty.toLowerCase(),
+      );
+
       Provider.of<SudokuProvider>(context, listen: false)
-          .generatePuzzle(emptyCells: widget.emptyCells);
+          .generatePuzzle(
+          emptyCells: widget.emptyCells,
+          gameSettings: gameSettings
+      );
     });
   }
 
@@ -66,9 +86,32 @@ class _SudokuScreenState extends State<SudokuScreen> {
     _timer.cancel();
   }
 
+  void _resetGame() {
+    final sudokuProvider = Provider.of<SudokuProvider>(context, listen: false);
+
+    // Create game settings using the current widget parameters
+    final gameSettings = GameSettings(
+      timeLimit: null,
+      allowHints: widget.allowHints,
+      allowMistakes: widget.allowMistakes,
+      maxMistakes: widget.maxMistakes,
+      difficulty: widget.difficulty.toLowerCase(),
+    );
+
+    sudokuProvider.generatePuzzle(
+      emptyCells: widget.emptyCells,
+      gameSettings: gameSettings,
+    );
+
+    _stopwatch.reset();
+    _stopwatch.start();
+    sudokuProvider.resetMistakes();
+    sudokuProvider.resetSolvedCells();
+    sudokuProvider.resetHints();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final sudokuProvider = Provider.of<SudokuProvider>(context, listen: false);
     return Scaffold(
       appBar: AppBar(
         title: Text('Classic Mode - ${widget.difficulty}'),
@@ -76,12 +119,7 @@ class _SudokuScreenState extends State<SudokuScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'New Puzzle',
-            onPressed: () {
-              sudokuProvider.generatePuzzle(emptyCells: widget.emptyCells);
-              _stopwatch.reset();
-              sudokuProvider.resetMistakes();
-              sudokuProvider.resetSolvedCells();
-            },
+            onPressed: _resetGame,
           ),
           IconButton(
             icon: Icon(Icons.brightness_6),
@@ -125,6 +163,7 @@ class _SudokuScreenState extends State<SudokuScreen> {
 
           return Column(
             children: [
+              // Game stats row
               SudokuMistakesCounter(
                 mistakes: provider.mistakesCount,
                 maxMistakes: provider.maxMistakes,
@@ -136,6 +175,12 @@ class _SudokuScreenState extends State<SudokuScreen> {
                 solved: provider.solved,
                 totalToSolve: widget.emptyCells,
               ),
+
+              // Hint widget (only show if hints are enabled)
+              if (widget.allowHints && provider.hintsRemaining > 0)
+                SudokuHintWidget(),
+
+              // Sudoku board
               Expanded(
                 flex: 4,
                 child: Padding(
@@ -143,7 +188,10 @@ class _SudokuScreenState extends State<SudokuScreen> {
                   child: SudokuBoard(),
                 ),
               ),
+
               const Divider(),
+
+              // Number keypad
               Expanded(
                 flex: 1,
                 child: const NumberKeypad(),
