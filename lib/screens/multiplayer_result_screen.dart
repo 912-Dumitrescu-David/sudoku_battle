@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import '../models/lobby_model.dart';
 import '../services/ranking_service.dart';
-import '../services/game_state_service.dart'; // 🔥 ADD THIS IMPORT
+import '../services/game_state_service.dart';
+import '../services/lobby_service.dart'; // 🔥 ADD THIS
+import '../providers/lobby_provider.dart'; // 🔥 ADD THIS
 import 'lobby_screen.dart';
 import 'post_game_lobby_screen.dart';
 import 'ranked_queue_screen.dart';
@@ -45,6 +48,7 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
   int? _myOldRating;
   int? _myNewRating;
   bool _ratingsUpdated = false;
+  bool _hasNavigated = false; // 🔥 Prevent multiple navigations
 
   @override
   void initState() {
@@ -54,6 +58,7 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
     print('   isWin: ${widget.isWin}');
     print('   lobby.isRanked: ${widget.lobby.isRanked}');
     print('   winnerName: ${widget.winnerName}');
+    print('   lobbyId: ${widget.lobby.id}');
 
     _progressController = AnimationController(
       duration: Duration(seconds: 30),
@@ -64,6 +69,11 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
       duration: Duration(milliseconds: 1500),
       vsync: this,
     );
+
+    // 🔥 IMMEDIATELY clean up lobby state to prevent auto-rejoin
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _cleanupLobbyState();
+    });
 
     // Start the countdown timer
     _startTimer();
@@ -77,14 +87,27 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
     }
 
     // Update ratings if this is a ranked match
-    print('🔍 Checking if should update ratings...');
-    print('   widget.lobby.isRanked: ${widget.lobby.isRanked}');
-
     if (widget.lobby.isRanked) {
       print('✅ This is a ranked match - will update ratings');
       _updateRankedRatings();
     } else {
       print('⚠️ This is NOT a ranked match - skipping rating updates');
+    }
+  }
+
+  // 🔥 NEW: Clean up lobby state to prevent auto-rejoin issues
+  Future<void> _cleanupLobbyState() async {
+    try {
+      print('🧹 Cleaning up lobby state to prevent auto-rejoin...');
+
+      // Clear current lobby from provider
+      final lobbyProvider = context.read<LobbyProvider>();
+      await lobbyProvider.leaveLobby();
+
+      print('✅ Lobby state cleaned up');
+    } catch (e) {
+      print('⚠️ Error cleaning up lobby state: $e');
+      // Continue anyway - this is cleanup, not critical
     }
   }
 
@@ -237,26 +260,35 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
 
   void _startTimer() {
     _timer = Timer.periodic(Duration(seconds: 1), (timer) {
-      setState(() {
-        _secondsRemaining--;
-      });
+      if (mounted) {
+        setState(() {
+          _secondsRemaining--;
+        });
 
-      if (_secondsRemaining <= 0) {
-        timer.cancel();
-        _returnToLobby();
+        if (_secondsRemaining <= 0) {
+          timer.cancel();
+          _returnToLobby();
+        }
       }
     });
   }
 
   void _returnToLobby() {
+    if (_hasNavigated) return; // 🔥 Prevent multiple navigations
+    _hasNavigated = true;
+
+    print('🔄 Returning to lobby/queue from result screen...');
+
     if (widget.lobby.isRanked) {
       // For ranked matches, go directly to ranked queue (no post-game lobby)
+      print('🏆 Ranked match - going to ranked queue');
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => RankedQueueScreen()),
-            (route) => route.isFirst,
+            (route) => route.isFirst, // 🔥 Clear entire navigation stack
       );
     } else {
       // For casual matches, go to post-game lobby for chat
+      print('🎮 Casual match - going to post-game lobby');
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -280,297 +312,318 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: widget.isWin ? Colors.green[50] : Colors.red[50],
-      appBar: AppBar(
-        title: Text(widget.lobby.isRanked ? 'Ranked Result' : 'Game Result'),
-        backgroundColor: widget.isWin ? Colors.green : Colors.red,
-        foregroundColor: Colors.white,
-        automaticallyImplyLeading: false,
-        actions: [
-          TextButton(
-            onPressed: _returnToLobby,
-            child: Text(
-              widget.lobby.isRanked ? 'Find New Game' : 'Return to Lobby',
-              style: TextStyle(color: Colors.white),
+    return WillPopScope(
+      // 🔥 Prevent back button from causing navigation issues
+      onWillPop: () async {
+        _returnToLobby();
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: widget.isWin ? Colors.green[50] : Colors.red[50],
+        appBar: AppBar(
+          title: Text(widget.lobby.isRanked ? 'Ranked Result' : 'Game Result'),
+          backgroundColor: widget.isWin ? Colors.green : Colors.red,
+          foregroundColor: Colors.white,
+          automaticallyImplyLeading: false, // 🔥 Remove back button
+          actions: [
+            TextButton(
+              onPressed: () {
+                if (!_hasNavigated) {
+                  _returnToLobby();
+                }
+              },
+              child: Text(
+                widget.lobby.isRanked ? 'Find New Game' : 'Return to Lobby',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
-          ),
-        ],
-      ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Result icon with animation
-              AnimatedBuilder(
-                animation: _celebrationController,
-                builder: (context, child) {
-                  return Transform.scale(
-                    scale: widget.isWin
-                        ? 1.0 + (_celebrationController.value * 0.1)
-                        : 1.0,
-                    child: Icon(
-                      widget.isWin ? Icons.emoji_events : Icons.sentiment_dissatisfied,
-                      color: widget.isWin ? Colors.amber : Colors.red,
-                      size: 100,
+          ],
+        ),
+        body: Center(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Result icon with animation
+                AnimatedBuilder(
+                  animation: _celebrationController,
+                  builder: (context, child) {
+                    return Transform.scale(
+                      scale: widget.isWin
+                          ? 1.0 + (_celebrationController.value * 0.1)
+                          : 1.0,
+                      child: Icon(
+                        widget.isWin ? Icons.emoji_events : Icons.sentiment_dissatisfied,
+                        color: widget.isWin ? Colors.amber : Colors.red,
+                        size: 100,
+                      ),
+                    );
+                  },
+                ),
+
+                SizedBox(height: 24),
+
+                // Result title with better ranked messaging
+                Text(
+                  _getResultTitle(),
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: widget.isWin ? Colors.green[700] : Colors.red[700],
+                  ),
+                ),
+
+                SizedBox(height: 16),
+
+                // Ranked match indicator with result details
+                if (widget.lobby.isRanked)
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.purple),
                     ),
-                  );
-                },
-              ),
-
-              SizedBox(height: 24),
-
-              // Result title with better ranked messaging
-              Text(
-                _getResultTitle(),
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: widget.isWin ? Colors.green[700] : Colors.red[700],
-                ),
-              ),
-
-              SizedBox(height: 16),
-
-              // Ranked match indicator with result details
-              if (widget.lobby.isRanked)
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.purple.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.purple),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.emoji_events, color: Colors.purple, size: 20),
-                          SizedBox(width: 4),
-                          Text(
-                            'Ranked Match Result',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.purple,
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        _getRankedResultMessage(),
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.purple[700],
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-
-              SizedBox(height: 16),
-
-              // Winner announcement
-              if (widget.winnerName != null)
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.amber),
-                  ),
-                  child: Text(
-                    widget.isFirstPlace
-                        ? '👑 ${widget.winnerName} wins!'
-                        : '🏆 Winner: ${widget.winnerName}',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.amber[800],
-                    ),
-                  ),
-                ),
-
-              SizedBox(height: 24),
-
-              // Rating changes (for ranked matches) - FIXED
-              if (widget.lobby.isRanked && _ratingsUpdated && _myOldRating != null && _myNewRating != null)
-                _buildRatingChanges(),
-
-              SizedBox(height: 16),
-
-              // Game stats
-              Card(
-                elevation: 4,
-                child: Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Column(
-                    children: [
-                      Text(
-                        'Your Performance',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      SizedBox(height: 16),
-                      _buildStatRow('Time', widget.time, Icons.timer),
-                      _buildStatRow(
-                        'Progress',
-                        '${widget.solvedBlocks} / ${widget.totalToSolve}',
-                        Icons.check_circle,
-                      ),
-                      _buildStatRow(
-                        'Completion',
-                        '${((widget.solvedBlocks / widget.totalToSolve) * 100).toInt()}%',
-                        Icons.trending_up,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              SizedBox(height: 24),
-
-              // Opponent status
-              if (widget.isOpponentStillPlaying)
-                Container(
-                  padding: EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.orange),
-                  ),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
-                        ),
-                      ),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Waiting for opponent to finish...',
-                          style: TextStyle(
-                            color: Colors.orange[800],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-              SizedBox(height: 24),
-
-              // Countdown timer
-              Container(
-                padding: EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).primaryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: Theme.of(context).primaryColor,
-                    width: 2,
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      widget.lobby.isRanked ? 'Finding new game in' : 'Returning to lobby in',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Theme.of(context).primaryColor,
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    child: Column(
                       children: [
-                        Icon(
-                          Icons.access_time,
-                          color: Theme.of(context).primaryColor,
-                          size: 28,
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.emoji_events, color: Colors.purple, size: 20),
+                            SizedBox(width: 4),
+                            Text(
+                              'Ranked Match Result',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.purple,
+                              ),
+                            ),
+                          ],
                         ),
-                        SizedBox(width: 8),
+                        SizedBox(height: 4),
                         Text(
-                          '${_secondsRemaining}s',
+                          _getRankedResultMessage(),
                           style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).primaryColor,
+                            fontSize: 14,
+                            color: Colors.purple[700],
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+
+                SizedBox(height: 16),
+
+                // Winner announcement
+                if (widget.winnerName != null)
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.amber),
+                    ),
+                    child: Text(
+                      widget.isFirstPlace
+                          ? '👑 ${widget.winnerName} wins!'
+                          : '🏆 Winner: ${widget.winnerName}',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.amber[800],
+                      ),
+                    ),
+                  ),
+
+                SizedBox(height: 24),
+
+                // Rating changes (for ranked matches) - FIXED
+                if (widget.lobby.isRanked && _ratingsUpdated && _myOldRating != null && _myNewRating != null)
+                  _buildRatingChanges(),
+
+                SizedBox(height: 16),
+
+                // Game stats
+                Card(
+                  elevation: 4,
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Column(
+                      children: [
+                        Text(
+                          'Your Performance',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        SizedBox(height: 16),
+                        _buildStatRow('Time', widget.time, Icons.timer),
+                        _buildStatRow(
+                          'Progress',
+                          '${widget.solvedBlocks} / ${widget.totalToSolve}',
+                          Icons.check_circle,
+                        ),
+                        _buildStatRow(
+                          'Completion',
+                          '${((widget.solvedBlocks / widget.totalToSolve) * 100).toInt()}%',
+                          Icons.trending_up,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                SizedBox(height: 24),
+
+                // Opponent status
+                if (widget.isOpponentStillPlaying)
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.orange),
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Waiting for opponent to finish...',
+                            style: TextStyle(
+                              color: Colors.orange[800],
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                       ],
                     ),
-                    SizedBox(height: 12),
-                    // Progress bar
-                    Container(
-                      height: 6,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(3),
-                        color: Colors.grey[300],
+                  ),
+
+                SizedBox(height: 24),
+
+                // Countdown timer
+                Container(
+                  padding: EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Theme.of(context).primaryColor,
+                      width: 2,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        widget.lobby.isRanked ? 'Finding new game in' : 'Returning to lobby in',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Theme.of(context).primaryColor,
+                        ),
                       ),
-                      child: AnimatedBuilder(
-                        animation: _progressController,
-                        builder: (context, child) {
-                          return FractionallySizedBox(
-                            alignment: Alignment.centerLeft,
-                            widthFactor: 1.0 - _progressController.value,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(3),
-                                color: Theme.of(context).primaryColor,
-                              ),
+                      SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.access_time,
+                            color: Theme.of(context).primaryColor,
+                            size: 28,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            '${_secondsRemaining}s',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).primaryColor,
                             ),
-                          );
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 12),
+                      // Progress bar
+                      Container(
+                        height: 6,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(3),
+                          color: Colors.grey[300],
+                        ),
+                        child: AnimatedBuilder(
+                          animation: _progressController,
+                          builder: (context, child) {
+                            return FractionallySizedBox(
+                              alignment: Alignment.centerLeft,
+                              widthFactor: 1.0 - _progressController.value,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(3),
+                                  color: Theme.of(context).primaryColor,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                SizedBox(height: 24),
+
+                // Action buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          if (!_hasNavigated) {
+                            _returnToLobby();
+                          }
                         },
+                        icon: Icon(widget.lobby.isRanked ? Icons.search : Icons.chat),
+                        label: Text(widget.lobby.isRanked ? 'Find New Game' : 'Back to Lobby'),
+                        style: ElevatedButton.styleFrom(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          backgroundColor: Theme.of(context).primaryColor,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 16),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          if (!_hasNavigated) {
+                            _hasNavigated = true;
+                            // Navigate to home screen - PASS REFRESH FLAG FOR RATING UPDATE
+                            Navigator.of(context).pushAndRemoveUntil(
+                              MaterialPageRoute(builder: (context) => Container()), // Placeholder
+                                  (route) => route.isFirst,
+                            );
+                          }
+                        },
+                        icon: Icon(Icons.home),
+                        label: Text('Home'),
+                        style: OutlinedButton.styleFrom(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-
-              SizedBox(height: 24),
-
-              // Action buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _returnToLobby,
-                      icon: Icon(widget.lobby.isRanked ? Icons.search : Icons.chat),
-                      label: Text(widget.lobby.isRanked ? 'Find New Game' : 'Back to Lobby'),
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        backgroundColor: Theme.of(context).primaryColor,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 16),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        // Navigate to home screen - PASS REFRESH FLAG FOR RATING UPDATE
-                        Navigator.of(context).popUntil((route) => route.isFirst);
-                      },
-                      icon: Icon(Icons.home),
-                      label: Text('Home'),
-                      style: OutlinedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

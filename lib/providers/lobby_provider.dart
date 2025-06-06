@@ -230,24 +230,47 @@ class LobbyProvider extends ChangeNotifier {
         !lobby.playersList.any((player) => player.id == user.uid);
   }
 
-  // Get user's current lobby if any
+  // Get user's current lobby if any - IMPROVED
   Future<Lobby?> getCurrentUserLobby() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
 
     try {
+      print('🔍 Checking for current user lobby...');
+
       final userLobbies = await LobbyService.getUserLobbies().first;
-      final activeLobby = userLobbies.where((lobby) =>
-      lobby.status == LobbyStatus.waiting ||
-          lobby.status == LobbyStatus.starting ||
-          lobby.status == LobbyStatus.inProgress
-      ).toList();
+      print('📋 Found ${userLobbies.length} lobbies user is in');
+
+      // 🔥 ONLY return lobbies that are actually active (not completed)
+      final activeLobby = userLobbies.where((lobby) {
+        final isActive = lobby.status == LobbyStatus.waiting ||
+            lobby.status == LobbyStatus.starting ||
+            lobby.status == LobbyStatus.inProgress;
+
+        print('   Lobby ${lobby.id}: status=${lobby.status}, active=$isActive');
+        return isActive;
+      }).toList();
 
       if (activeLobby.isNotEmpty) {
+        print('✅ Found active lobby: ${activeLobby.first.id}');
         _currentLobby = activeLobby.first;
         notifyListeners();
         await joinLobby(_currentLobby!.id);
         return _currentLobby;
+      } else {
+        print('✅ No active lobbies found');
+
+        // 🔥 Clean up any completed lobbies user might still be in
+        for (final lobby in userLobbies) {
+          if (lobby.status == LobbyStatus.completed) {
+            print('🧹 Cleaning up completed lobby: ${lobby.id}');
+            try {
+              await LobbyService.leaveLobby(lobby.id);
+            } catch (e) {
+              print('⚠️ Error leaving completed lobby: $e');
+            }
+          }
+        }
       }
     } catch (e) {
       print('Error getting user lobby: $e');
@@ -299,4 +322,15 @@ class LobbyProvider extends ChangeNotifier {
     _currentLobbySubscription?.cancel();
     super.dispose();
   }
+
+  // 🔥 NEW: Force clear lobby state (for cleanup after matches)
+  void forceCleanupLobbyState() {
+    print('🧹 Force cleaning up lobby provider state');
+    _currentLobbySubscription?.cancel();
+    _currentLobby = null;
+    _clearError();
+    notifyListeners();
+    print('✅ Lobby provider state cleared');
+  }
+
 }

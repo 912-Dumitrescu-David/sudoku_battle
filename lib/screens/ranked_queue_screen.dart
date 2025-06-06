@@ -35,6 +35,12 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this); // 🔥 Add observer
 
+    // 🔥 FORCE CLEANUP any stale lobby state when entering ranked queue
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final lobbyProvider = context.read<LobbyProvider>();
+      lobbyProvider.forceCleanupLobbyState();
+    });
+
     _pulseController = AnimationController(
       duration: Duration(seconds: 2),
       vsync: this,
