@@ -227,6 +227,8 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     final currentUser = FirebaseAuth.instance.currentUser;
 
     print('🏁 Game ended! Win: $isWin, TimeUp: $timeUp');
+    print('🎮 Lobby is ranked: ${widget.lobby.isRanked}');
+    print('👤 Current user: ${currentUser?.displayName ?? currentUser?.uid}');
 
     // Update game state
     await GameStateService.updatePlayerGameStatus(
@@ -242,7 +244,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
       // Small delay for Firestore transaction
       await Future.delayed(Duration(milliseconds: 500));
 
-      // Get game result to determine placement
+      // Get game result to determine placement and winner info
       final gameResult = await GameStateService.getGameResult(
           widget.lobby.id,
           currentUser?.uid ?? ''
@@ -253,6 +255,33 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
       final opponentStillPlaying = _opponentStates.values
           .any((state) => !state.isCompleted);
 
+      // For ranked games, we want to know who actually won
+      String? actualWinnerName;
+      bool isFirstPlace = true;
+
+      if (widget.lobby.isRanked) {
+        // In ranked games, determine the actual winner
+        if (gameResult['isFirstPlace'] == true) {
+          actualWinnerName = currentUser?.displayName ?? 'You';
+          isFirstPlace = true;
+          print('🥇 You got FIRST PLACE in ranked match!');
+        } else {
+          actualWinnerName = gameResult['winnerName'];
+          isFirstPlace = false;
+          print('🥈 You got SECOND PLACE in ranked match. Winner: $actualWinnerName');
+        }
+      } else {
+        // Casual games
+        actualWinnerName = gameResult['winnerName'] ?? currentUser?.displayName ?? 'You';
+        isFirstPlace = gameResult['isFirstPlace'] ?? true;
+      }
+
+      print('🏆 Navigating to result screen with:');
+      print('   isWin: true');
+      print('   isFirstPlace: $isFirstPlace');
+      print('   winnerName: $actualWinnerName');
+      print('   lobby.isRanked: ${widget.lobby.isRanked}');
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -262,9 +291,9 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             solvedBlocks: provider.solved,
             totalToSolve: _calculateTotalToSolve(),
             lobby: widget.lobby,
-            winnerName: gameResult['winnerName'] ?? currentUser?.displayName ?? 'You',
+            winnerName: actualWinnerName,
             isOpponentStillPlaying: opponentStillPlaying,
-            isFirstPlace: gameResult['isFirstPlace'] ?? true,
+            isFirstPlace: isFirstPlace,
           ),
         ),
       );
@@ -272,6 +301,19 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
       // Loss or time up
       final opponentStillPlaying = _opponentStates.values
           .any((state) => !state.isCompleted);
+
+      // For losses, we need to determine who actually won
+      String? actualWinnerName;
+
+      if (widget.lobby.isRanked && !opponentStillPlaying) {
+        // Check who won the ranked match
+        final gameResult = await GameStateService.getGameResult(
+            widget.lobby.id,
+            currentUser?.uid ?? ''
+        );
+        actualWinnerName = gameResult['winnerName'];
+        print('💔 You LOST the ranked match. Winner: $actualWinnerName');
+      }
 
       Navigator.pushReplacement(
         context,
@@ -282,8 +324,9 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             solvedBlocks: provider.solved,
             totalToSolve: _calculateTotalToSolve(),
             lobby: widget.lobby,
-            winnerName: null,
+            winnerName: actualWinnerName,
             isOpponentStillPlaying: opponentStillPlaying,
+            isFirstPlace: false,
           ),
         ),
       );

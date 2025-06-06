@@ -6,6 +6,7 @@ import 'package:sudoku_battle/providers/sudoku_provider.dart';
 import 'package:sudoku_battle/screens/auth_screen.dart';
 import 'package:sudoku_battle/screens/home_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:sudoku_battle/services/user_initializayion_service.dart';
 import 'firebase_options.dart';
 import 'package:sudoku_battle/providers/theme_provider.dart';
 
@@ -14,6 +15,13 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  // In your main.dart, after Firebase.initializeApp()
+  FirebaseAuth.instance.authStateChanges().listen((User? user) {
+    if (user != null) {
+      UserInitializationService.initializeUserIfNeeded();
+    }
+  });
+
   runApp(
     MultiProvider(
       providers: [

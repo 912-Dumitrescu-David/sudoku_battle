@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/lobby_model.dart';
+import '../services/ranking_service.dart';
+import '../services/game_state_service.dart'; // 🔥 ADD THIS IMPORT
 import 'lobby_screen.dart';
 import 'post_game_lobby_screen.dart';
+import 'ranked_queue_screen.dart';
 
 class MultiplayerResultScreen extends StatefulWidget {
   final bool isWin;
@@ -12,7 +16,7 @@ class MultiplayerResultScreen extends StatefulWidget {
   final Lobby lobby;
   final String? winnerName;
   final bool isOpponentStillPlaying;
-  final bool isFirstPlace; // Add this to distinguish 1st vs 2nd place
+  final bool isFirstPlace;
 
   const MultiplayerResultScreen({
     Key? key,
@@ -23,7 +27,7 @@ class MultiplayerResultScreen extends StatefulWidget {
     required this.lobby,
     this.winnerName,
     this.isOpponentStillPlaying = false,
-    this.isFirstPlace = true, // Default to first place
+    this.isFirstPlace = true,
   }) : super(key: key);
 
   @override
@@ -37,9 +41,19 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
   late AnimationController _progressController;
   late AnimationController _celebrationController;
 
+  // Rating change info - FIXED to show current player's changes
+  int? _myOldRating;
+  int? _myNewRating;
+  bool _ratingsUpdated = false;
+
   @override
   void initState() {
     super.initState();
+
+    print('🎮 MultiplayerResultScreen initState');
+    print('   isWin: ${widget.isWin}');
+    print('   lobby.isRanked: ${widget.lobby.isRanked}');
+    print('   winnerName: ${widget.winnerName}');
 
     _progressController = AnimationController(
       duration: Duration(seconds: 30),
@@ -61,6 +75,164 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
     if (widget.isWin) {
       _celebrationController.repeat();
     }
+
+    // Update ratings if this is a ranked match
+    print('🔍 Checking if should update ratings...');
+    print('   widget.lobby.isRanked: ${widget.lobby.isRanked}');
+
+    if (widget.lobby.isRanked) {
+      print('✅ This is a ranked match - will update ratings');
+      _updateRankedRatings();
+    } else {
+      print('⚠️ This is NOT a ranked match - skipping rating updates');
+    }
+  }
+
+  Future<void> _updateRankedRatings() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        print('❌ No authenticated user for rating update');
+        return;
+      }
+
+      print('🏆 Starting ranked rating update...');
+      print('Current user: ${currentUser.uid}');
+      print('Current user display name: ${currentUser.displayName}');
+      print('Local isWin: ${widget.isWin} (this might be wrong!)');
+      print('Server isFirstPlace: ${widget.isFirstPlace}');
+      print('Winner name: ${widget.winnerName}');
+      print('Lobby isRanked: ${widget.lobby.isRanked}');
+      print('Players in lobby: ${widget.lobby.playersList.length}');
+
+      // Debug: Print all players
+      for (int i = 0; i < widget.lobby.playersList.length; i++) {
+        final player = widget.lobby.playersList[i];
+        print('Player $i: ${player.name} (${player.id}) - Rating: ${player.rating}');
+      }
+
+      // Only update ratings if this is actually a ranked game
+      if (!widget.lobby.isRanked) {
+        print('⚠️ Skipping rating update - not a ranked game');
+        return;
+      }
+
+      // 🔥 GET THE ACTUAL SERVER-SIDE WINNER (not local completion status)
+      print('🔍 Getting server-side game result to determine actual winner...');
+      final serverGameResult = await GameStateService.getGameResult(
+          widget.lobby.id,
+          currentUser.uid
+      );
+
+      final actualIsFirstPlace = serverGameResult['isFirstPlace'] ?? false;
+      final actualWinnerName = serverGameResult['winnerName'];
+
+      print('🎯 SERVER TRUTH:');
+      print('   Actual winner: $actualWinnerName');
+      print('   Current player is first place: $actualIsFirstPlace');
+      print('   Local widget.isWin was: ${widget.isWin}');
+      print('   Local widget.isFirstPlace was: ${widget.isFirstPlace}');
+
+      final players = widget.lobby.playersList;
+      if (players.length != 2) {
+        print('❌ Invalid player count: ${players.length}');
+        return;
+      }
+
+      // Find current player and opponent
+      Player? currentPlayer;
+      Player? opponent;
+
+      for (final player in players) {
+        if (player.id == currentUser.uid) {
+          currentPlayer = player;
+        } else {
+          opponent = player;
+        }
+      }
+
+      if (currentPlayer == null || opponent == null) {
+        print('❌ Could not identify current player or opponent');
+        print('Current player found: ${currentPlayer != null}');
+        print('Opponent found: ${opponent != null}');
+        return;
+      }
+
+      print('✅ Players identified:');
+      print('Current player: ${currentPlayer.name} (${currentPlayer.id}) - Rating: ${currentPlayer.rating}');
+      print('Opponent: ${opponent.name} (${opponent.id}) - Rating: ${opponent.rating}');
+
+      // Store current player's old rating for UI display
+      _myOldRating = currentPlayer.rating;
+
+      // 🔥 FIXED: Use server-side result, not local completion status
+      String winnerId, loserId;
+      int winnerOldRating, loserOldRating;
+      String winnerName, loserName;
+
+      if (actualIsFirstPlace) {
+        // Current player actually won on server
+        winnerId = currentPlayer.id;
+        loserId = opponent.id;
+        winnerOldRating = currentPlayer.rating;
+        loserOldRating = opponent.rating;
+        winnerName = currentPlayer.name;
+        loserName = opponent.name;
+        print('✅ CORRECTED: Current player ACTUALLY WON the game on server');
+      } else {
+        // Current player actually lost on server
+        winnerId = opponent.id;
+        loserId = currentPlayer.id;
+        winnerOldRating = opponent.rating;
+        loserOldRating = currentPlayer.rating;
+        winnerName = opponent.name;
+        loserName = currentPlayer.name;
+        print('❌ CORRECTED: Current player ACTUALLY LOST the game on server');
+      }
+
+      print('📊 Rating update details:');
+      print('Winner: $winnerName ($winnerId) - Old Rating: $winnerOldRating');
+      print('Loser: $loserName ($loserId) - Old Rating: $loserOldRating');
+
+      // Calculate new ratings
+      final ratingChanges = RankingService.calculateNewRatings(
+        winnerRating: winnerOldRating,
+        loserRating: loserOldRating,
+      );
+
+      print('📈 New ratings calculated:');
+      print('Winner: $winnerOldRating → ${ratingChanges['winner']} (${ratingChanges['winner']! - winnerOldRating > 0 ? '+' : ''}${ratingChanges['winner']! - winnerOldRating})');
+      print('Loser: $loserOldRating → ${ratingChanges['loser']} (${ratingChanges['loser']! - loserOldRating > 0 ? '+' : ''}${ratingChanges['loser']! - loserOldRating})');
+
+      // 🔥 FIXED: Store the current player's new rating based on actual server result
+      if (actualIsFirstPlace) {
+        _myNewRating = ratingChanges['winner']!;
+      } else {
+        _myNewRating = ratingChanges['loser']!;
+      }
+
+      print('🎯 Current player rating change: $_myOldRating → $_myNewRating');
+      print('🎯 Rating change amount: ${_myNewRating! - _myOldRating!}');
+
+      // Update ratings in Firestore
+      print('💾 Updating Firestore...');
+      await RankingService.updatePlayerRatings(
+        winnerId: winnerId,
+        loserId: loserId,
+        winnerOldRating: winnerOldRating,
+        loserOldRating: loserOldRating,
+      );
+
+      setState(() {
+        _ratingsUpdated = true;
+      });
+
+      print('✅ Rating update completed successfully!');
+
+    } catch (e, stackTrace) {
+      print('❌ Error updating ratings: $e');
+      print('Stack trace: $stackTrace');
+    }
   }
 
   void _startTimer() {
@@ -77,16 +249,25 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
   }
 
   void _returnToLobby() {
-    // Navigate to post-game lobby for chat and potential rematch
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PostGameLobbyScreen(
-          lobbyId: widget.lobby.id,
-          wasGameCompleted: true,
+    if (widget.lobby.isRanked) {
+      // For ranked matches, go directly to ranked queue (no post-game lobby)
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => RankedQueueScreen()),
+            (route) => route.isFirst,
+      );
+    } else {
+      // For casual matches, go to post-game lobby for chat
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PostGameLobbyScreen(
+            lobbyId: widget.lobby.id,
+            wasGameCompleted: true,
+            isRankedGame: false, // Casual game
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
 
   @override
@@ -102,15 +283,15 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
     return Scaffold(
       backgroundColor: widget.isWin ? Colors.green[50] : Colors.red[50],
       appBar: AppBar(
-        title: Text('Game Result'),
+        title: Text(widget.lobby.isRanked ? 'Ranked Result' : 'Game Result'),
         backgroundColor: widget.isWin ? Colors.green : Colors.red,
         foregroundColor: Colors.white,
-        automaticallyImplyLeading: false, // Prevent back button
+        automaticallyImplyLeading: false,
         actions: [
           TextButton(
             onPressed: _returnToLobby,
             child: Text(
-              'Return to Lobby',
+              widget.lobby.isRanked ? 'Find New Game' : 'Return to Lobby',
               style: TextStyle(color: Colors.white),
             ),
           ),
@@ -141,17 +322,56 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
 
               SizedBox(height: 24),
 
-              // Result title
+              // Result title with better ranked messaging
               Text(
-                widget.isWin
-                    ? (widget.isFirstPlace ? '🥇 Victory!' : '🥈 Second Place!')
-                    : 'Game Over',
+                _getResultTitle(),
                 style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
                   color: widget.isWin ? Colors.green[700] : Colors.red[700],
                 ),
               ),
+
+              SizedBox(height: 16),
+
+              // Ranked match indicator with result details
+              if (widget.lobby.isRanked)
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.purple),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.emoji_events, color: Colors.purple, size: 20),
+                          SizedBox(width: 4),
+                          Text(
+                            'Ranked Match Result',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.purple,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        _getRankedResultMessage(),
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.purple[700],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
 
               SizedBox(height: 16),
 
@@ -177,6 +397,12 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
                 ),
 
               SizedBox(height: 24),
+
+              // Rating changes (for ranked matches) - FIXED
+              if (widget.lobby.isRanked && _ratingsUpdated && _myOldRating != null && _myNewRating != null)
+                _buildRatingChanges(),
+
+              SizedBox(height: 16),
 
               // Game stats
               Card(
@@ -257,7 +483,7 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
                 child: Column(
                   children: [
                     Text(
-                      'Returning to lobby in',
+                      widget.lobby.isRanked ? 'Finding new game in' : 'Returning to lobby in',
                       style: TextStyle(
                         fontSize: 16,
                         color: Theme.of(context).primaryColor,
@@ -319,8 +545,8 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: _returnToLobby,
-                      icon: Icon(Icons.chat),
-                      label: Text('Back to Lobby'),
+                      icon: Icon(widget.lobby.isRanked ? Icons.search : Icons.chat),
+                      label: Text(widget.lobby.isRanked ? 'Find New Game' : 'Back to Lobby'),
                       style: ElevatedButton.styleFrom(
                         padding: EdgeInsets.symmetric(vertical: 12),
                         backgroundColor: Theme.of(context).primaryColor,
@@ -332,7 +558,7 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: () {
-                        // Navigate to home screen
+                        // Navigate to home screen - PASS REFRESH FLAG FOR RATING UPDATE
                         Navigator.of(context).popUntil((route) => route.isFirst);
                       },
                       icon: Icon(Icons.home),
@@ -346,6 +572,122 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  String _getResultTitle() {
+    if (widget.lobby.isRanked) {
+      if (widget.isWin) {
+        return widget.isFirstPlace ? '🥇 Ranked Victory!' : '🥈 Second Place!';
+      } else {
+        return '💔 Ranked Loss';
+      }
+    } else {
+      return widget.isWin
+          ? (widget.isFirstPlace ? '🥇 Victory!' : '🥈 Second Place!')
+          : 'Game Over';
+    }
+  }
+
+  String _getRankedResultMessage() {
+    if (widget.isWin) {
+      if (widget.isFirstPlace) {
+        return 'Congratulations! You won the ranked match and gained rating points!';
+      } else {
+        return 'Good job! You finished second in this ranked match.';
+      }
+    } else {
+      return 'Better luck next time! You lost rating points in this ranked match.';
+    }
+  }
+
+  // 🔥 FIXED: Use current player's rating changes instead of winner's
+  Widget _buildRatingChanges() {
+    if (_myOldRating == null || _myNewRating == null) return SizedBox.shrink();
+
+    final change = _myNewRating! - _myOldRating!;
+    final isPositive = change > 0;
+
+    return Card(
+      elevation: 4,
+      color: isPositive ? Colors.green[50] : Colors.red[50],
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Text(
+              'Rating Update',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Column(
+                  children: [
+                    Text(
+                      'Previous',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      '$_myOldRating',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                Icon(
+                  Icons.arrow_forward,
+                  color: isPositive ? Colors.green : Colors.red,
+                  size: 32,
+                ),
+                Column(
+                  children: [
+                    Text(
+                      'New Rating',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      '$_myNewRating',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: isPositive ? Colors.green : Colors.red,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: (isPositive ? Colors.green : Colors.red).withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${isPositive ? '+' : ''}$change',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isPositive ? Colors.green[700] : Colors.red[700],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

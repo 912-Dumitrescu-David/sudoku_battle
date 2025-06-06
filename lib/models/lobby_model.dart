@@ -92,6 +92,7 @@ class Lobby {
   final String? gameSessionId;
   final String? gameServerEndpoint;
   final Map<String, dynamic>? sharedPuzzle; // Add shared puzzle
+  final bool isRanked; // Add ranked flag
 
   Lobby({
     required this.id,
@@ -110,6 +111,7 @@ class Lobby {
     this.gameSessionId,
     this.gameServerEndpoint,
     this.sharedPuzzle, // Add to constructor
+    this.isRanked = false, // Add to constructor with default false
   });
 
   factory Lobby.fromFirestore(DocumentSnapshot doc) {
@@ -136,6 +138,7 @@ class Lobby {
       gameSessionId: data['gameSessionId'],
       gameServerEndpoint: data['gameServerEndpoint'],
       sharedPuzzle: data['sharedPuzzle'] as Map<String, dynamic>?, // Add this line
+      isRanked: data['isRanked'] ?? false, // 🔥 THIS WAS MISSING! Add this line
     );
   }
 
@@ -156,6 +159,7 @@ class Lobby {
       'gameSessionId': gameSessionId,
       'gameServerEndpoint': gameServerEndpoint,
       'sharedPuzzle': sharedPuzzle, // Add this line
+      'isRanked': isRanked, // 🔥 ALSO ADD THIS to toFirestore method
     };
   }
 
@@ -203,6 +207,8 @@ class Lobby {
     DateTime? startedAt,
     String? gameSessionId,
     String? gameServerEndpoint,
+    Map<String, dynamic>? sharedPuzzle,
+    bool? isRanked, // 🔥 ADD THIS to copyWith
   }) {
     return Lobby(
       id: id ?? this.id,
@@ -220,6 +226,8 @@ class Lobby {
       startedAt: startedAt ?? this.startedAt,
       gameSessionId: gameSessionId ?? this.gameSessionId,
       gameServerEndpoint: gameServerEndpoint ?? this.gameServerEndpoint,
+      sharedPuzzle: sharedPuzzle ?? this.sharedPuzzle,
+      isRanked: isRanked ?? this.isRanked, // 🔥 ADD THIS to copyWith
     );
   }
 }

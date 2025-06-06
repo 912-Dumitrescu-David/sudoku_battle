@@ -5,15 +5,18 @@ import '../providers/lobby_provider.dart';
 import '../widgets/chat_widget.dart';
 import '../services/lobby_service.dart';
 import 'lobby_screen.dart';
+import 'ranked_queue_screen.dart';
 
 class PostGameLobbyScreen extends StatefulWidget {
   final String lobbyId;
   final bool wasGameCompleted;
+  final bool isRankedGame; // Add this flag
 
   const PostGameLobbyScreen({
     Key? key,
     required this.lobbyId,
     this.wasGameCompleted = true,
+    this.isRankedGame = false, // Default to false (casual)
   }) : super(key: key);
 
   @override
@@ -40,8 +43,12 @@ class _PostGameLobbyScreenState extends State<PostGameLobbyScreen> {
       await LobbyService.resetLobbyForNewGame(widget.lobbyId);
     } catch (e) {
       print('Error resetting lobby: $e');
-      // If lobby reset fails, go to lobby browser
-      Navigator.pushReplacementNamed(context, '/lobby');
+      // If lobby reset fails, go to appropriate screen based on game type
+      if (widget.isRankedGame) {
+        Navigator.pushReplacementNamed(context, '/ranked-queue');
+      } else {
+        Navigator.pushReplacementNamed(context, '/lobby');
+      }
     }
   }
 
@@ -49,8 +56,8 @@ class _PostGameLobbyScreenState extends State<PostGameLobbyScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Game Complete - Lobby Chat'),
-        backgroundColor: Colors.green,
+        title: Text(widget.isRankedGame ? 'Ranked Game Complete - Chat' : 'Game Complete - Lobby Chat'),
+        backgroundColor: widget.isRankedGame ? Colors.purple : Colors.green,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
@@ -74,12 +81,19 @@ class _PostGameLobbyScreenState extends State<PostGameLobbyScreen> {
                   SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: () {
-                      Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(builder: (context) => LobbyScreen()),
-                            (route) => route.isFirst,
-                      );
+                      if (widget.isRankedGame) {
+                        Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute(builder: (context) => RankedQueueScreen()),
+                              (route) => route.isFirst,
+                        );
+                      } else {
+                        Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute(builder: (context) => LobbyScreen()),
+                              (route) => route.isFirst,
+                        );
+                      }
                     },
-                    child: Text('Go to Lobby Browser'),
+                    child: Text(widget.isRankedGame ? 'Go to Ranked Queue' : 'Go to Lobby Browser'),
                   ),
                 ],
               ),
@@ -93,25 +107,31 @@ class _PostGameLobbyScreenState extends State<PostGameLobbyScreen> {
                 width: double.infinity,
                 padding: EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
+                  color: (widget.isRankedGame ? Colors.purple : Colors.green).withOpacity(0.1),
                   border: Border(
-                    bottom: BorderSide(color: Colors.green),
+                    bottom: BorderSide(color: widget.isRankedGame ? Colors.purple : Colors.green),
                   ),
                 ),
                 child: Column(
                   children: [
-                    Icon(Icons.emoji_events, color: Colors.green, size: 32),
+                    Icon(
+                      widget.isRankedGame ? Icons.emoji_events : Icons.celebration,
+                      color: widget.isRankedGame ? Colors.purple : Colors.green,
+                      size: 32,
+                    ),
                     SizedBox(height: 8),
                     Text(
-                      'Game Complete!',
+                      widget.isRankedGame ? 'Ranked Game Complete!' : 'Game Complete!',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: Colors.green,
+                        color: widget.isRankedGame ? Colors.purple : Colors.green,
                       ),
                     ),
                     Text(
-                      'Chat with your fellow players or start a new game',
+                      widget.isRankedGame
+                          ? 'Your rating has been updated based on performance'
+                          : 'Chat with your fellow players or start a new game',
                       style: TextStyle(color: Colors.grey[600]),
                     ),
                   ],
@@ -154,7 +174,7 @@ class _PostGameLobbyScreenState extends State<PostGameLobbyScreen> {
                                     Container(
                                       padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: Colors.blue,
+                                        color: widget.isRankedGame ? Colors.purple : Colors.blue,
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Text(
@@ -210,17 +230,28 @@ class _PostGameLobbyScreenState extends State<PostGameLobbyScreen> {
                         Expanded(
                           child: OutlinedButton.icon(
                             onPressed: () async {
-                              // Leave lobby and go to lobby browser
+                              // Leave lobby and navigate based on game type
                               await context.read<LobbyProvider>().leaveLobby();
-                              Navigator.of(context).pushAndRemoveUntil(
-                                MaterialPageRoute(builder: (context) => LobbyScreen()),
-                                    (route) => route.isFirst,
-                              );
+
+                              if (widget.isRankedGame) {
+                                // Go to ranked queue for ranked games
+                                Navigator.of(context).pushAndRemoveUntil(
+                                  MaterialPageRoute(builder: (context) => RankedQueueScreen()),
+                                      (route) => route.isFirst,
+                                );
+                              } else {
+                                // Go to lobby browser for casual games
+                                Navigator.of(context).pushAndRemoveUntil(
+                                  MaterialPageRoute(builder: (context) => LobbyScreen()),
+                                      (route) => route.isFirst,
+                                );
+                              }
                             },
-                            icon: Icon(Icons.exit_to_app),
-                            label: Text('Leave & Find New'),
+                            icon: Icon(widget.isRankedGame ? Icons.emoji_events : Icons.search),
+                            label: Text(widget.isRankedGame ? 'Find Ranked Game' : 'Find Casual Game'),
                             style: OutlinedButton.styleFrom(
                               padding: EdgeInsets.symmetric(vertical: 12),
+                              foregroundColor: widget.isRankedGame ? Colors.purple : Colors.blue,
                             ),
                           ),
                         ),
