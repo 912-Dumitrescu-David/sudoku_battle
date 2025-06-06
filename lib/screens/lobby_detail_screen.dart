@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/lobby_model.dart';
 import '../providers/lobby_provider.dart';
+import '../widgets/chat_widget.dart';
 import 'multiplayer_sudoku_screen.dart';
 
 class LobbyDetailScreen extends StatefulWidget {
@@ -17,6 +18,7 @@ class LobbyDetailScreen extends StatefulWidget {
 
 class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
   bool _hasNavigatedToGame = false;
+  bool _isChatExpanded = false;
 
   @override
   void initState() {
@@ -86,6 +88,16 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                       ],
                     ),
                   ),
+                ),
+                // Chat widget
+                LobbyChat(
+                  lobbyId: widget.lobbyId,
+                  isExpanded: _isChatExpanded,
+                  onToggleExpand: () {
+                    setState(() {
+                      _isChatExpanded = !_isChatExpanded;
+                    });
+                  },
                 ),
                 _buildBottomActions(lobby, lobbyProvider),
               ],

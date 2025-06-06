@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import '../models/lobby_model.dart';
 import '../utils/sudoku_engine.dart';
+import '../services/game_state_service.dart';
 
 class LobbyService {
   // 🎯 Use your custom "lobbies" database instead of default
@@ -259,7 +260,20 @@ class LobbyService {
 
       if (updatedPlayersList.isEmpty) {
         // Delete lobby if no players left
+        print('🗑️ Deleting empty lobby: $lobbyId');
         transaction.delete(lobbyRef);
+
+        // Also clean up associated data
+        _cleanupLobbyData(lobbyId);
+      } else if (updatedPlayersList.length == 1 && lobby.status != LobbyStatus.waiting) {
+        // If only 1 player left after a completed game, mark lobby for cleanup
+        print('⚠️ Only 1 player left in post-game lobby, marking for cleanup');
+        transaction.update(lobbyRef, {
+          'currentPlayers': updatedPlayersList.length,
+          'playersList': updatedPlayersList.map((p) => p.toMap()).toList(),
+          'markedForCleanup': true,
+          'cleanupAt': DateTime.now().add(Duration(minutes: 5)).millisecondsSinceEpoch,
+        });
       } else if (lobby.hostPlayerId == user.uid) {
         // Transfer host to another player
         final newHost = updatedPlayersList.first;
@@ -279,7 +293,52 @@ class LobbyService {
     });
   }
 
-  // Get public lobbies stream
+  // Clean up lobby associated data
+  static Future<void> _cleanupLobbyData(String lobbyId) async {
+    try {
+      final batch = _firestore.batch();
+
+      // Clean up game states
+      final gameStates = await _firestore
+          .collection(_lobbiesCollection)
+          .doc(lobbyId)
+          .collection('gameStates')
+          .get();
+
+      for (final doc in gameStates.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // Clean up game results
+      final gameResults = await _firestore
+          .collection(_lobbiesCollection)
+          .doc(lobbyId)
+          .collection('gameResults')
+          .get();
+
+      for (final doc in gameResults.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // Clean up messages
+      final messages = await _firestore
+          .collection(_lobbiesCollection)
+          .doc(lobbyId)
+          .collection('messages')
+          .get();
+
+      for (final doc in messages.docs) {
+        batch.delete(doc.reference);
+      }
+
+      await batch.commit();
+      print('🧹 Cleaned up all data for lobby: $lobbyId');
+    } catch (e) {
+      print('Error cleaning up lobby data: $e');
+    }
+  }
+
+  // Get public lobbies stream with cleanup filtering
   static Stream<List<Lobby>> getPublicLobbies() {
     return _firestore
         .collection(_lobbiesCollection)
@@ -288,9 +347,33 @@ class LobbyService {
         .orderBy('createdAt', descending: true)
         .limit(20)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-        .map((doc) => Lobby.fromFirestore(doc))
-        .toList());
+        .map((snapshot) {
+      // Filter out lobbies marked for cleanup or with insufficient players
+      final validLobbies = snapshot.docs
+          .where((doc) {
+        final lobby = Lobby.fromFirestore(doc);
+        final data = doc.data() as Map<String, dynamic>?;
+
+        // Don't show lobbies marked for cleanup
+        if (data?['markedForCleanup'] == true) {
+          return false;
+        }
+
+        // Don't show lobbies with only 1 player after 2 minutes
+        if (lobby.currentPlayers == 1) {
+          final ageInMinutes = DateTime.now().difference(lobby.createdAt).inMinutes;
+          if (ageInMinutes > 2) {
+            return false;
+          }
+        }
+
+        return true;
+      })
+          .map((doc) => Lobby.fromFirestore(doc))
+          .toList();
+
+      return validLobbies;
+    });
   }
 
   // Get specific lobby stream
@@ -348,6 +431,9 @@ class LobbyService {
         print('✅ Shared puzzle verified');
         print('🔄 Updating lobby status to starting...');
 
+        // Clear previous game states before starting new game
+        await GameStateService.clearGameStates(lobbyId);
+
         // Just update status since puzzle already exists
         transaction.update(lobbyRef, {
           'status': 'starting',
@@ -360,6 +446,23 @@ class LobbyService {
       print('✅ Transaction completed successfully');
     } catch (e) {
       print('❌ Error in startGame: $e');
+      rethrow;
+    }
+  }
+
+  // Reset lobby status after game completion
+  static Future<void> resetLobbyForNewGame(String lobbyId) async {
+    try {
+      await _firestore.collection(_lobbiesCollection).doc(lobbyId).update({
+        'status': 'waiting',
+        'startedAt': null,
+        'gameSessionId': null,
+        'gameServerEndpoint': null,
+      });
+
+      print('✅ Lobby reset for new game: $lobbyId');
+    } catch (e) {
+      print('❌ Error resetting lobby: $e');
       rethrow;
     }
   }

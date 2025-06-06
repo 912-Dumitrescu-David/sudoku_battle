@@ -10,7 +10,8 @@ import '../widgets/number_keypad.dart';
 import '../widgets/mistake_counter.dart';
 import '../widgets/timer.dart';
 import '../widgets/correct_counter.dart';
-import '../screens/result_screen.dart';
+import '../screens/multiplayer_result_screen.dart';
+import '../services/game_state_service.dart';
 
 class MultiplayerSudokuScreen extends StatefulWidget {
   final Lobby lobby;
@@ -36,6 +37,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
 
   // Opponent tracking
   Map<String, PlayerGameState> _opponentStates = {};
+  StreamSubscription? _gameStatesSubscription;
 
   @override
   void initState() {
@@ -52,18 +54,33 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
       }
     });
 
-    // Initialize opponent states
+    // Initialize opponent states and listen to game state updates
     for (final player in widget.lobby.playersList) {
       if (player.id != FirebaseAuth.instance.currentUser?.uid) {
         _opponentStates[player.id] = PlayerGameState(
           playerId: player.id,
           playerName: player.name,
-          progress: 0.0,
+          isCompleted: false,
+          completionTime: '00:00',
+          solvedCells: 0,
+          totalCells: _calculateTotalToSolve(),
           mistakes: 0,
-          isConnected: true,
+          finishedAt: 0,
+          progress: 0.0,
         );
       }
     }
+
+    // Listen to game states
+    _gameStatesSubscription = GameStateService.getGameStates(widget.lobby.id).listen((gameStates) {
+      setState(() {
+        for (final gameState in gameStates) {
+          if (gameState.playerId != FirebaseAuth.instance.currentUser?.uid) {
+            _opponentStates[gameState.playerId] = gameState;
+          }
+        }
+      });
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Load the puzzle
@@ -85,6 +102,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
   void dispose() {
     _stopwatch.stop();
     _timer.cancel();
+    _gameStatesSubscription?.cancel();
     super.dispose();
   }
 
@@ -136,34 +154,87 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             });
           }
 
-          // Check end game conditions
+          // 🎯 CHECK END GAME CONDITIONS
           if (!_gameEnded) {
             if (provider.mistakesCount >= provider.maxMistakes) {
-              Future.microtask(() {
+              Future.microtask(() async {
                 _stopGame();
+
+                // Update game state for defeat
+                await GameStateService.updatePlayerGameStatus(
+                  widget.lobby.id,
+                  isCompleted: false,
+                  completionTime: _formattedTime,
+                  solvedCells: provider.solved,
+                  totalCells: _calculateTotalToSolve(),
+                  mistakes: provider.mistakesCount,
+                );
+
+                // Check if opponent is still playing
+                final opponentStillPlaying = _opponentStates.values
+                    .any((state) => !state.isCompleted);
+
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ResultScreen(
+                    builder: (_) => MultiplayerResultScreen(
                       isWin: false,
                       time: _formattedTime,
                       solvedBlocks: provider.solved,
                       totalToSolve: _calculateTotalToSolve(),
+                      lobby: widget.lobby,
+                      winnerName: null, // No winner if lost due to mistakes
+                      isOpponentStillPlaying: opponentStillPlaying,
                     ),
                   ),
                 );
               });
             } else if (provider.isSolved) {
-              Future.microtask(() {
+              Future.microtask(() async {
                 _stopGame();
+                final currentUser = FirebaseAuth.instance.currentUser;
+
+                print('🏁 Player finished! Updating game state...');
+
+                // Update game state FIRST (this will try to claim first place atomically)
+                await GameStateService.updatePlayerGameStatus(
+                  widget.lobby.id,
+                  isCompleted: true,
+                  completionTime: _formattedTime,
+                  solvedCells: provider.solved,
+                  totalCells: _calculateTotalToSolve(),
+                  mistakes: provider.mistakesCount,
+                );
+
+                print('✅ Game state updated, checking placement...');
+
+                // Small delay to ensure Firestore transaction is complete
+                await Future.delayed(Duration(milliseconds: 500));
+
+                // Get game result to determine placement
+                final gameResult = await GameStateService.getGameResult(
+                    widget.lobby.id,
+                    currentUser?.uid ?? ''
+                );
+
+                // Check if opponent is still playing
+                final opponentStillPlaying = _opponentStates.values
+                    .any((state) => !state.isCompleted);
+
+                print('🏆 Final Game Result: ${gameResult}');
+
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ResultScreen(
+                    builder: (_) => MultiplayerResultScreen(
                       isWin: true,
                       time: _formattedTime,
                       solvedBlocks: provider.solved,
                       totalToSolve: _calculateTotalToSolve(),
+                      lobby: widget.lobby,
+                      winnerName: gameResult['winnerName'] ?? currentUser?.displayName ?? 'You',
+                      isOpponentStillPlaying: opponentStillPlaying,
+                      isFirstPlace: gameResult['isFirstPlace'] ?? true,
                     ),
                   ),
                 );
@@ -244,20 +315,15 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
   }
 
   void _updateMyProgress(double progress) {
-    // Here you would send progress updates to other players
-    // For now, we'll just simulate static opponent progress (no crazy animation)
-    if (_opponentStates.isNotEmpty) {
-      final opponentId = _opponentStates.keys.first;
-      setState(() {
-        // Simple static simulation - opponent always at 50% of your progress
-        _opponentStates[opponentId]!.progress = progress * 0.5;
-
-        // Cap at 1.0
-        if (_opponentStates[opponentId]!.progress > 1.0) {
-          _opponentStates[opponentId]!.progress = 1.0;
-        }
-      });
-    }
+    // Send progress update to other players
+    GameStateService.updatePlayerGameStatus(
+      widget.lobby.id,
+      isCompleted: false,
+      completionTime: _formattedTime,
+      solvedCells: Provider.of<SudokuProvider>(context, listen: false).solved,
+      totalCells: _calculateTotalToSolve(),
+      mistakes: Provider.of<SudokuProvider>(context, listen: false).mistakesCount,
+    );
   }
 
   Widget _buildWaitingScreen() {
@@ -307,8 +373,8 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
       child: Row(
         children: [
           Icon(
-            opponent.isConnected ? Icons.circle : Icons.circle_outlined,
-            color: opponent.isConnected ? Colors.green : Colors.red,
+            opponent.isCompleted ? Icons.check_circle : Icons.circle,
+            color: opponent.isCompleted ? Colors.green : Colors.blue,
             size: 12,
           ),
           SizedBox(width: 8),
@@ -325,11 +391,16 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             child: LinearProgressIndicator(
               value: opponent.progress,
               backgroundColor: Colors.grey[300],
+              valueColor: AlwaysStoppedAnimation<Color>(
+                opponent.isCompleted ? Colors.green : Colors.blue,
+              ),
             ),
           ),
           SizedBox(width: 8),
           Text(
-            '${(opponent.progress * 100).toInt()}%',
+            opponent.isCompleted
+                ? 'Done!'
+                : '${(opponent.progress * 100).toInt()}%',
             style: TextStyle(fontSize: 12),
           ),
         ],
@@ -400,22 +471,6 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     }
     return count;
   }
-}
-
-class PlayerGameState {
-  final String playerId;
-  final String playerName;
-  double progress;
-  int mistakes;
-  bool isConnected;
-
-  PlayerGameState({
-    required this.playerId,
-    required this.playerName,
-    required this.progress,
-    required this.mistakes,
-    required this.isConnected,
-  });
 }
 
 class CountdownDialog extends StatefulWidget {

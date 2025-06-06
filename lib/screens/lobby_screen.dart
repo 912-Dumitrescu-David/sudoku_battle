@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/lobby_model.dart';
 import '../providers/lobby_provider.dart';
+import '../services/lobby_service.dart';
 import '../utils/sudoku_engine.dart';
 import '../widgets/lobby_card.dart';
 import '../widgets/create_lobby_dialog.dart';
@@ -25,6 +26,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<LobbyProvider>().initialize();
       _checkForExistingLobby();
+
     });
   }
 
@@ -167,19 +169,6 @@ class _LobbyScreenState extends State<LobbyScreen> {
           ),
           SizedBox(height: 8),
           // Temporary test button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () => _testSudokuEngine(),
-              icon: Icon(Icons.bug_report),
-              label: Text('Test SudokuEngine'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(vertical: 12),
-              ),
-            ),
-          ),
         ],
       ),
     );
