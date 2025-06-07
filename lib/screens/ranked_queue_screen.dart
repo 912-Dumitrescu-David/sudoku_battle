@@ -22,18 +22,30 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
   StreamSubscription? _queueSubscription;
   Timer? _matchmakingTimer;
   Timer? _searchRadiusTimer;
+  Timer? _maxTimeTimer; // 🔥 NEW: Timer for max queue time
   late AnimationController _pulseController;
   late AnimationController _progressController;
 
   bool _isInQueue = false;
   QueueStatus? _queueStatus;
   int _secondsInQueue = 0;
-  int? _currentRating; // 🔥 Add current rating display
+  int? _currentRating;
+
+  // 🔥 NEW: Cache leaderboard data to prevent constant refreshing
+  List<PlayerRank>? _cachedLeaderboard;
+  bool _leaderboardLoaded = false;
+
+  // 🔥 NEW: Queue limits
+  static const int MAX_QUEUE_TIME_SECONDS = 180; // 3 minutes
+  static const int MAX_SEARCH_RADIUS = 600; // Max rating difference
+  static const int INITIAL_SEARCH_RADIUS = 100; // Starting search radius
+  static const int RADIUS_EXPANSION_INTERVAL = 20; // Expand every 20 seconds
+  static const int RADIUS_EXPANSION_AMOUNT = 50; // Expand by 50 points each time
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // 🔥 Add observer
+    WidgetsBinding.instance.addObserver(this);
 
     // 🔥 FORCE CLEANUP any stale lobby state when entering ranked queue
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -47,26 +59,27 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     );
 
     _progressController = AnimationController(
-      duration: Duration(seconds: 20), // 20 seconds for search radius expansion
+      duration: Duration(seconds: MAX_QUEUE_TIME_SECONDS), // 🔥 Use max time for progress
       vsync: this,
     );
 
-    _loadCurrentRating(); // 🔥 Load rating on init
+    _loadCurrentRating();
+    _loadLeaderboard(); // 🔥 Load leaderboard once at start
     _listenToQueue();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // 🔥 Remove observer
+    WidgetsBinding.instance.removeObserver(this);
     _queueSubscription?.cancel();
     _matchmakingTimer?.cancel();
     _searchRadiusTimer?.cancel();
+    _maxTimeTimer?.cancel(); // 🔥 NEW: Cancel max time timer
     _pulseController.dispose();
     _progressController.dispose();
     super.dispose();
   }
 
-  // 🔥 Detect when app resumes (when user returns from ranked match)
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -75,14 +88,12 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     }
   }
 
-  // 🔥 Load current player rating
   Future<void> _loadCurrentRating() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         print('🔄 Loading current rating for ranked queue');
 
-        // Force refresh from server to get latest rating
         final userDoc = await FirebaseFirestore.instanceFor(
           app: Firebase.app(),
           databaseId: 'lobbies',
@@ -99,7 +110,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
       }
     } catch (e) {
       print('Error loading rating in queue: $e');
-      // Fallback to cache
       try {
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
@@ -122,6 +132,8 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
 
   void _listenToQueue() {
     _queueSubscription = RankingService.getQueueStatus().listen((status) {
+      print('🔍 Queue status update: ${status?.searchRadius ?? "null"}');
+
       setState(() {
         _queueStatus = status;
         _isInQueue = status != null;
@@ -129,14 +141,11 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
 
       if (status != null) {
         if (status.isMatched && status.lobbyId != null) {
-          // Match found! Navigate to lobby
           _handleMatchFound(status.lobbyId!);
         } else if (!status.isMatched) {
-          // Still searching
           _startSearchTimers();
         }
       } else {
-        // Not in queue
         _stopSearchTimers();
       }
     });
@@ -151,32 +160,97 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
       });
     });
 
-    // Timer for search radius expansion every 20 seconds
+    // 🔥 NEW: Max time timer - auto-leave queue after 3 minutes
+    _maxTimeTimer?.cancel();
+    _maxTimeTimer = Timer(Duration(seconds: MAX_QUEUE_TIME_SECONDS), () {
+      if (_isInQueue) {
+        print('⏰ Max queue time reached (${MAX_QUEUE_TIME_SECONDS}s) - leaving queue');
+        _handleQueueTimeout();
+      }
+    });
+
+    // 🔥 FIXED: Timer for search radius expansion every 20 seconds (not every search attempt)
     _searchRadiusTimer?.cancel();
-    _searchRadiusTimer = Timer.periodic(Duration(seconds: 20), (timer) {
-      print('⏰ 20 seconds passed, expanding search radius...');
-      // The backend will handle radius expansion
+    _searchRadiusTimer = Timer.periodic(Duration(seconds: RADIUS_EXPANSION_INTERVAL), (timer) {
+      print('⏰ 20 seconds passed, triggering radius expansion timer...');
+      // The expansion will happen in the next findRankedMatch call
+      // We don't need to do anything here - just let the next search attempt handle it
     });
 
     // Start animations
     _pulseController.repeat();
-    _progressController.repeat();
+    _progressController.forward();
   }
 
   void _stopSearchTimers() {
     _matchmakingTimer?.cancel();
     _searchRadiusTimer?.cancel();
+    _maxTimeTimer?.cancel(); // 🔥 NEW: Cancel max time timer
     _pulseController.stop();
     _progressController.stop();
+    _progressController.reset(); // Reset progress bar
     setState(() {
       _secondsInQueue = 0;
     });
   }
 
+  // 🔥 NEW: Handle queue timeout
+  void _handleQueueTimeout() async {
+    _stopSearchTimers();
+
+    // Leave queue
+    await RankingService.leaveRankedQueue();
+
+    if (mounted) {
+      // Show timeout dialog
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.access_time, color: Colors.orange),
+              SizedBox(width: 8),
+              Text('Queue Timeout'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('No match found after 3 minutes.'),
+              SizedBox(height: 8),
+              Text('This could mean:'),
+              Text('• Few players at your rating level'),
+              Text('• Try playing during peak hours'),
+              Text('• Consider casual multiplayer'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('OK'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _rejoinQueue();
+              },
+              child: Text('Try Again'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  // 🔥 NEW: Rejoin queue after timeout
+  void _rejoinQueue() {
+    _joinQueue();
+  }
+
   void _handleMatchFound(String lobbyId) {
     _stopSearchTimers();
 
-    // Show match found dialog briefly
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -192,16 +266,14 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
       ),
     );
 
-    // Navigate to lobby after a short delay
     Timer(Duration(seconds: 2), () {
-      Navigator.of(context).pop(); // Close dialog
+      Navigator.of(context).pop();
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (context) => LobbyDetailScreen(lobbyId: lobbyId),
         ),
       ).then((_) {
-        // 🔥 Refresh rating when returning from match
         _loadCurrentRating();
       });
     });
@@ -215,9 +287,10 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
       });
 
       await RankingService.joinRankedQueue();
-      print('✅ Successfully joined ranked queue');
+      print('✅ Successfully joined ranked queue with limits:');
+      print('   Max time: ${MAX_QUEUE_TIME_SECONDS}s');
+      print('   Max radius: $MAX_SEARCH_RADIUS');
 
-      // Start looking for matches immediately and periodically
       _startMatchmaking();
 
     } catch (e) {
@@ -241,7 +314,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
 
     print('🔍 Starting matchmaking for user: ${user.uid}');
 
-    // Try to find a match every 3 seconds
     Timer.periodic(Duration(seconds: 3), (timer) async {
       if (!_isInQueue || _queueStatus?.isMatched == true) {
         print('⏹️ Stopping matchmaking - not in queue or already matched');
@@ -256,7 +328,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
         if (lobbyId != null) {
           print('✅ Match found! Lobby ID: $lobbyId');
           timer.cancel();
-          // The stream listener will handle navigation when isMatched becomes true
         } else {
           print('⏰ No match found yet, continuing search...');
         }
@@ -288,13 +359,12 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
         backgroundColor: Colors.purple,
         foregroundColor: Colors.white,
         actions: [
-          // 🔥 Add rating display in app bar
           if (_currentRating != null)
             Padding(
               padding: EdgeInsets.only(right: 16),
               child: Center(
                 child: GestureDetector(
-                  onTap: _loadCurrentRating, // 🔥 Tap to refresh
+                  onTap: _loadCurrentRating,
                   child: Container(
                     padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
@@ -325,22 +395,12 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
         padding: EdgeInsets.all(16),
         child: Column(
           children: [
-            // Queue status card
             _buildQueueStatusCard(),
-
             SizedBox(height: 24),
-
-            // Action button
             _buildActionButton(),
-
             SizedBox(height: 24),
-
-            // Info cards
             _buildInfoCards(),
-
             Spacer(),
-
-            // Leaderboard preview
             _buildLeaderboardPreview(),
           ],
         ),
@@ -356,7 +416,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
         child: Column(
           children: [
             if (_isInQueue) ...[
-              // In queue - show search status
               AnimatedBuilder(
                 animation: _pulseController,
                 builder: (context, child) {
@@ -379,19 +438,27 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
                 ),
               ),
               SizedBox(height: 8),
+              // 🔥 NEW: Show time remaining instead of just elapsed
               Text(_formatSearchTime(_secondsInQueue)),
+              // 🔥 NEW: Show warning when approaching timeout
+              if (_secondsInQueue > MAX_QUEUE_TIME_SECONDS - 30) ...[
+                SizedBox(height: 4),
+                Text(
+                  'Timeout in ${MAX_QUEUE_TIME_SECONDS - _secondsInQueue}s',
+                  style: TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
               SizedBox(height: 16),
               if (_queueStatus != null) ...[
                 _buildSearchInfo(),
                 SizedBox(height: 16),
-                // Search progress indicator
-                LinearProgressIndicator(
-                  backgroundColor: Colors.grey[300],
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.purple),
-                ),
+                // 🔥 NEW: Progress bar showing time until timeout
+                _buildTimeoutProgressBar(),
               ],
             ] else ...[
-              // Not in queue - show join prompt
               Icon(
                 Icons.emoji_events,
                 size: 64,
@@ -412,7 +479,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
                   color: Colors.grey[600],
                 ),
               ),
-              // 🔥 Show current rating in queue status
               if (_currentRating != null) ...[
                 SizedBox(height: 12),
                 Container(
@@ -445,10 +511,63 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     );
   }
 
+  // 🔥 NEW: Timeout progress bar
+  Widget _buildTimeoutProgressBar() {
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Time remaining:',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+            Text(
+              '${MAX_QUEUE_TIME_SECONDS - _secondsInQueue}s',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: _secondsInQueue > MAX_QUEUE_TIME_SECONDS - 30
+                    ? Colors.orange
+                    : Colors.purple,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 4),
+        LinearProgressIndicator(
+          value: _secondsInQueue / MAX_QUEUE_TIME_SECONDS,
+          backgroundColor: Colors.grey[300],
+          valueColor: AlwaysStoppedAnimation<Color>(
+            _secondsInQueue > MAX_QUEUE_TIME_SECONDS - 30
+                ? Colors.orange
+                : Colors.purple,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSearchInfo() {
-    // 🔥 Use current rating from state instead of queue status for more up-to-date info
     final rating = _currentRating ?? _queueStatus?.rating ?? 1000;
-    final searchRadius = _queueStatus?.searchRadius ?? 100;
+
+    // 🔥 FIXED: Calculate actual current search radius based on time in queue
+    int actualSearchRadius = INITIAL_SEARCH_RADIUS;
+
+    if (_queueStatus != null) {
+      // Use the radius from queue status if available
+      actualSearchRadius = _queueStatus!.searchRadius;
+    } else {
+      // Fallback: calculate based on time in queue
+      final expansions = (_secondsInQueue / RADIUS_EXPANSION_INTERVAL).floor();
+      actualSearchRadius = (INITIAL_SEARCH_RADIUS + (expansions * RADIUS_EXPANSION_AMOUNT))
+          .clamp(INITIAL_SEARCH_RADIUS, MAX_SEARCH_RADIUS);
+    }
+
+    print('🔍 Debug search info:');
+    print('   Seconds in queue: $_secondsInQueue');
+    print('   Queue status radius: ${_queueStatus?.searchRadius}');
+    print('   Calculated radius: $actualSearchRadius');
 
     return Container(
       padding: EdgeInsets.all(12),
@@ -474,11 +593,60 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
             children: [
               Text('Search Range:'),
               Text(
-                '${rating - searchRadius} - ${rating + searchRadius}',
+                '${rating - actualSearchRadius} - ${rating + actualSearchRadius}',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
             ],
           ),
+          SizedBox(height: 4),
+          // 🔥 Show current radius and expansion info
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Current Radius:',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              Text(
+                '±$actualSearchRadius',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: actualSearchRadius >= MAX_SEARCH_RADIUS ? Colors.orange : Colors.purple,
+                ),
+              ),
+            ],
+          ),
+          // 🔥 Show radius expansion status
+          if (actualSearchRadius >= MAX_SEARCH_RADIUS) ...[
+            SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.info, size: 16, color: Colors.orange),
+                SizedBox(width: 4),
+                Text(
+                  'Maximum search range reached',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.orange,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            SizedBox(height: 4),
+            Text(
+              'Expanding every ${RADIUS_EXPANSION_INTERVAL}s (+$RADIUS_EXPANSION_AMOUNT)',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ],
       ),
     );
@@ -567,17 +735,45 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
               padding: EdgeInsets.all(12),
               child: Column(
                 children: [
-                  Icon(Icons.trending_up, color: Colors.green, size: 32),
+                  Icon(Icons.error_outline, color: Colors.amber, size: 32),
                   SizedBox(height: 8),
                   Text(
-                    'ELO',
+                    '3 Max',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                     ),
                   ),
                   Text(
-                    'Rating',
+                    'Mistakes',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        SizedBox(width: 8),
+        Expanded(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  Icon(Icons.tune, color: Colors.blue, size: 32),
+                  SizedBox(height: 8),
+                  Text(
+                    'Medium',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  Text(
+                    'Difficulty',
                     style: TextStyle(
                       color: Colors.grey[600],
                       fontSize: 12,
@@ -608,42 +804,72 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                TextButton(
-                  onPressed: () {
-                    // Navigate to full leaderboard
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => LeaderboardScreen(),
-                      ),
-                    );
-                  },
-                  child: Text('View All'),
+                Row(
+                  children: [
+                    // 🔥 NEW: Refresh button for manual refresh
+                    IconButton(
+                      icon: Icon(Icons.refresh, size: 18),
+                      onPressed: () {
+                        setState(() {
+                          _leaderboardLoaded = false;
+                          _cachedLeaderboard = null;
+                        });
+                        _loadLeaderboard();
+                      },
+                      tooltip: 'Refresh leaderboard',
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => LeaderboardScreen(),
+                          ),
+                        );
+                      },
+                      child: Text('View All'),
+                    ),
+                  ],
                 ),
               ],
             ),
             SizedBox(height: 8),
-            FutureBuilder<List<PlayerRank>>(
-              future: RankingService.getLeaderboard(limit: 3),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(child: CircularProgressIndicator());
-                }
-
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return Text('No ranked players yet');
-                }
-
-                final topPlayers = snapshot.data!;
-                return Column(
-                  children: topPlayers.map((player) =>
-                      _buildLeaderboardItem(player)).toList(),
-                );
-              },
-            ),
+            // 🔥 FIXED: Use cached data instead of FutureBuilder
+            _buildLeaderboardContent(),
           ],
         ),
       ),
+    );
+  }
+
+  // 🔥 NEW: Build leaderboard content from cached data
+  Widget _buildLeaderboardContent() {
+    if (!_leaderboardLoaded) {
+      // Still loading
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_cachedLeaderboard == null || _cachedLeaderboard!.isEmpty) {
+      // No data or empty
+      return Padding(
+        padding: EdgeInsets.all(16),
+        child: Text(
+          'No ranked players yet',
+          style: TextStyle(color: Colors.grey[600]),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    // Show cached leaderboard
+    return Column(
+      children: _cachedLeaderboard!.map((player) =>
+          _buildLeaderboardItem(player)).toList(),
     );
   }
 
@@ -701,4 +927,32 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
       return 'Searching for ${remainingSeconds}s';
     }
   }
+
+  // 🔥 NEW: Load leaderboard once and cache it
+  Future<void> _loadLeaderboard() async {
+    if (_leaderboardLoaded) return; // Don't reload if already loaded
+
+    try {
+      print('📊 Loading leaderboard (one time)...');
+      final leaderboard = await RankingService.getLeaderboard(limit: 3);
+
+      if (mounted) {
+        setState(() {
+          _cachedLeaderboard = leaderboard;
+          _leaderboardLoaded = true;
+        });
+        print('✅ Leaderboard cached with ${leaderboard.length} players');
+      }
+    } catch (e) {
+      print('❌ Error loading leaderboard: $e');
+      // Set empty list so we don't keep trying
+      if (mounted) {
+        setState(() {
+          _cachedLeaderboard = [];
+          _leaderboardLoaded = true;
+        });
+      }
+    }
+  }
+
 }

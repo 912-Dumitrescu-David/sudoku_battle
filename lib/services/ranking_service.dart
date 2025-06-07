@@ -92,7 +92,7 @@ class RankingService {
     }
   }
 
-  /// Join the ranked queue
+  /// Join the ranked queue with improved limits
   static Future<void> joinRankedQueue() async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not authenticated');
@@ -103,7 +103,7 @@ class RankingService {
       final userData = userDoc.data() ?? {};
       final currentRating = userData['rating'] ?? defaultRating;
 
-      // Add to ranked queue
+      // Add to ranked queue with initial settings
       await _firestore.collection(_rankedQueueCollection).doc(user.uid).set({
         'playerId': user.uid,
         'playerName': user.displayName ?? 'Player',
@@ -111,17 +111,24 @@ class RankingService {
         'avatarUrl': user.photoURL,
         'joinedQueueAt': FieldValue.serverTimestamp(),
         'localJoinedAt': DateTime.now().millisecondsSinceEpoch,
-        'searchRadius': 100, // Initial search radius (ELO points)
+        'searchRadius': 100, // 🔥 Start with smaller radius
+        'maxSearchRadius': 600, // 🔥 NEW: Max search radius limit
+        'maxQueueTime': 180, // 🔥 NEW: Max queue time in seconds (3 minutes)
         'isMatched': false,
         'matchedWith': null,
       });
 
       print('🎯 Joined ranked queue with rating: $currentRating');
+      print('   Initial search radius: 100');
+      print('   Max search radius: 600');
+      print('   Max queue time: 180s');
     } catch (e) {
       print('❌ Error joining ranked queue: $e');
       rethrow;
     }
   }
+
+
 
   /// Leave the ranked queue
   static Future<void> leaveRankedQueue() async {
@@ -151,7 +158,7 @@ class RankingService {
     });
   }
 
-  /// Find and create a ranked match
+  /// Find and create a ranked match with improved limits
   static Future<String?> findRankedMatch(String playerId) async {
     try {
       print('🔍 Finding match for player: $playerId');
@@ -165,13 +172,25 @@ class RankingService {
 
       final playerData = playerDoc.data()!;
       final playerRating = playerData['rating'] as int;
-      final searchRadius = playerData['searchRadius'] as int;
+      final currentRadius = playerData['searchRadius'] as int;
+      final maxRadius = playerData['maxSearchRadius'] as int? ?? 600; // 🔥 Use limit
+      final joinedAt = playerData['localJoinedAt'] as int;
+      final maxQueueTime = playerData['maxQueueTime'] as int? ?? 180; // 🔥 Use limit
 
-      print('🔍 Player rating: $playerRating, search radius: $searchRadius');
+      // 🔥 Check if player has been in queue too long
+      final timeInQueue = DateTime.now().millisecondsSinceEpoch - joinedAt;
+      if (timeInQueue > (maxQueueTime * 1000)) {
+        print('⏰ Player has been in queue too long (${timeInQueue ~/ 1000}s > ${maxQueueTime}s)');
+        // Remove from queue due to timeout
+        await _firestore.collection(_rankedQueueCollection).doc(playerId).delete();
+        return null;
+      }
+
+      print('🔍 Player rating: $playerRating, search radius: $currentRadius');
 
       // Find potential opponents within search radius
-      final minRating = playerRating - searchRadius;
-      final maxRating = playerRating + searchRadius;
+      final minRating = playerRating - currentRadius;
+      final maxRating = playerRating + currentRadius;
 
       print('🔍 Searching for opponents with rating between $minRating and $maxRating');
 
@@ -188,10 +207,23 @@ class RankingService {
           .where((doc) {
         if (doc.id == playerId) return false; // Exclude self
 
-        final opponentRating = doc.data()['rating'] as int;
+        // 🔥 Check if opponent hasn't timed out
+        final opponentData = doc.data();
+        final opponentJoinedAt = opponentData['localJoinedAt'] as int? ?? 0;
+        final opponentMaxTime = opponentData['maxQueueTime'] as int? ?? 180;
+        final opponentTimeInQueue = DateTime.now().millisecondsSinceEpoch - opponentJoinedAt;
+
+        if (opponentTimeInQueue > (opponentMaxTime * 1000)) {
+          print('⏰ Removing timed out opponent: ${doc.id}');
+          // Remove timed out opponent (fire and forget)
+          _firestore.collection(_rankedQueueCollection).doc(doc.id).delete();
+          return false;
+        }
+
+        final opponentRating = opponentData['rating'] as int;
         final inRange = opponentRating >= minRating && opponentRating <= maxRating;
 
-        print('  👤 ${doc.data()['playerName']} (${doc.id}) - Rating: $opponentRating, InRange: $inRange');
+        print('  👤 ${opponentData['playerName']} (${doc.id}) - Rating: $opponentRating, InRange: $inRange');
         return inRange;
       })
           .toList();
@@ -199,14 +231,36 @@ class RankingService {
       print('🎯 Found ${potentialOpponents.length} potential opponents');
 
       if (potentialOpponents.isEmpty) {
-        print('⏰ No opponents found, expanding search radius');
+        print('⏰ No opponents found, checking if we can expand search radius');
 
-        // Expand search radius for next time
-        final newRadius = min(searchRadius + 50, 500);
-        await _firestore.collection(_rankedQueueCollection).doc(playerId).update({
-          'searchRadius': newRadius,
-        });
-        print('📈 Search radius expanded to: $newRadius');
+        // 🔥 FIXED: Only expand radius at proper intervals (20 seconds), not every search
+        final timeInQueue = DateTime.now().millisecondsSinceEpoch - joinedAt;
+        final timeInQueueSeconds = timeInQueue ~/ 1000;
+
+        // Calculate what the radius SHOULD be based on time in queue
+        const int EXPANSION_INTERVAL_SECONDS = 20;
+        const int EXPANSION_AMOUNT = 50;
+        const int INITIAL_RADIUS = 100;
+
+        final expectedExpansions = (timeInQueueSeconds / EXPANSION_INTERVAL_SECONDS).floor();
+        final expectedRadius = (INITIAL_RADIUS + (expectedExpansions * EXPANSION_AMOUNT)).clamp(INITIAL_RADIUS, maxRadius);
+
+        print('🔍 Time in queue: ${timeInQueueSeconds}s');
+        print('🔍 Expected expansions: $expectedExpansions');
+        print('🔍 Current radius: $currentRadius');
+        print('🔍 Expected radius: $expectedRadius');
+
+        // Only update if the current radius is behind what it should be
+        if (currentRadius < expectedRadius && currentRadius < maxRadius) {
+          await _firestore.collection(_rankedQueueCollection).doc(playerId).update({
+            'searchRadius': expectedRadius,
+          });
+          print('📈 Search radius updated to: $expectedRadius (was $currentRadius)');
+        } else if (currentRadius >= maxRadius) {
+          print('🔴 Search radius at maximum ($maxRadius), no expansion possible');
+        } else {
+          print('🔵 Search radius ($currentRadius) is already at expected level ($expectedRadius)');
+        }
         return null;
       }
 
@@ -244,6 +298,17 @@ class RankingService {
 
         if (playerCheckData['isMatched'] == true || opponentCheckData['isMatched'] == true) {
           throw Exception('One of the players is already matched');
+        }
+
+        // 🔥 Double-check timeout before creating match
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final playerTime = now - (playerCheckData['localJoinedAt'] as int);
+        final opponentTime = now - (opponentCheckData['localJoinedAt'] as int);
+        final playerMaxTime = (playerCheckData['maxQueueTime'] as int? ?? 180) * 1000;
+        final opponentMaxTime = (opponentCheckData['maxQueueTime'] as int? ?? 180) * 1000;
+
+        if (playerTime > playerMaxTime || opponentTime > opponentMaxTime) {
+          throw Exception('One of the players timed out during match creation');
         }
 
         // Create the lobby first
@@ -287,7 +352,6 @@ class RankingService {
       return null;
     }
   }
-
   /// Create a ranked lobby for matched players
   static Future<String> _createRankedLobby(
       Map<String, dynamic> player1Data,
