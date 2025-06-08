@@ -1,3 +1,4 @@
+// screens/sudoku_screen.dart - FIXED VERSION (No powerups in single player)
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -59,17 +60,20 @@ class _SudokuScreenState extends State<SudokuScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Create game settings using the parameters passed from difficulty screen
       final gameSettings = GameSettings(
-        timeLimit: null, // No time limit for classic mode
+        timeLimit: null,
+        // No time limit for classic mode
         allowHints: widget.allowHints,
         allowMistakes: widget.allowMistakes,
         maxMistakes: widget.maxMistakes,
         difficulty: widget.difficulty.toLowerCase(),
       );
 
+      // 🔥 FIXED: Pass GameMode.classic to ensure no powerups in single player
       Provider.of<SudokuProvider>(context, listen: false)
           .generatePuzzle(
-          emptyCells: widget.emptyCells,
-          gameSettings: gameSettings
+        emptyCells: widget.emptyCells,
+        gameSettings: gameSettings,
+        gameMode: GameMode.classic, // 🔥 Explicitly set to classic mode
       );
     });
   }
@@ -98,9 +102,11 @@ class _SudokuScreenState extends State<SudokuScreen> {
       difficulty: widget.difficulty.toLowerCase(),
     );
 
+    // 🔥 FIXED: Pass GameMode.classic to ensure no powerups
     sudokuProvider.generatePuzzle(
       emptyCells: widget.emptyCells,
       gameSettings: gameSettings,
+      gameMode: GameMode.classic, // 🔥 Explicitly set to classic mode
     );
 
     _stopwatch.reset();
@@ -132,6 +138,10 @@ class _SudokuScreenState extends State<SudokuScreen> {
       ),
       body: Consumer<SudokuProvider>(
         builder: (context, provider, child) {
+          // 🔥 FIXED: Debug check to ensure powerups are disabled
+          print('🔍 Single player mode - Powerups enabled: ${provider
+              .isPowerupModeEnabled}');
+
           // Check end game conditions.
           if (provider.mistakesCount >= provider.maxMistakes) {
             Future.microtask(() {
@@ -139,11 +149,12 @@ class _SudokuScreenState extends State<SudokuScreen> {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                    builder: (_) => ResultScreen(
-                        isWin: false,
-                        time: _formattedTime,
-                        solvedBlocks: provider.solved,
-                        totalToSolve: widget.emptyCells)),
+                    builder: (_) =>
+                        ResultScreen(
+                            isWin: false,
+                            time: _formattedTime,
+                            solvedBlocks: provider.solved,
+                            totalToSolve: widget.emptyCells)),
               );
             });
           } else if (provider.isSolved) {
@@ -152,11 +163,12 @@ class _SudokuScreenState extends State<SudokuScreen> {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                    builder: (_) => ResultScreen(
-                        isWin: true,
-                        time: _formattedTime,
-                        solvedBlocks: provider.solved,
-                        totalToSolve: widget.emptyCells)),
+                    builder: (_) =>
+                        ResultScreen(
+                            isWin: true,
+                            time: _formattedTime,
+                            solvedBlocks: provider.solved,
+                            totalToSolve: widget.emptyCells)),
               );
             });
           }

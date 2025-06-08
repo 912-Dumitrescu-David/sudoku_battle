@@ -14,9 +14,16 @@ class SudokuMistakesCounter extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(8.0),
-      child: Text(
-        'Mistakes: $mistakes / $maxMistakes',
-        style: const TextStyle(fontSize: 16, color: Colors.red),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.close, color: Colors.red),
+          const SizedBox(width: 4),
+          Text(
+            '$mistakes / $maxMistakes',
+            style: const TextStyle(fontSize: 16, color: Colors.red),
+          ),
+        ],
       ),
     );
   }

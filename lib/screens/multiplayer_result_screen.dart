@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'package:sudoku_battle/screens/home_screen.dart';
 import '../models/lobby_model.dart';
 import '../services/ranking_service.dart';
 import '../services/game_state_service.dart';
@@ -608,7 +609,7 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
                             _hasNavigated = true;
                             // Navigate to home screen - PASS REFRESH FLAG FOR RATING UPDATE
                             Navigator.of(context).pushAndRemoveUntil(
-                              MaterialPageRoute(builder: (context) => Container()), // Placeholder
+                              MaterialPageRoute(builder: (context) => HomeScreen()), // Placeholder
                                   (route) => route.isFirst,
                             );
                           }

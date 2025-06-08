@@ -1,9 +1,11 @@
+// widgets/game_timer_widget.dart (UPDATED VERSION)
 import 'dart:async';
 import 'package:flutter/material.dart';
 
 class GameTimerWidget extends StatefulWidget {
   final int? timeLimitSeconds; // null = no limit
   final bool isGameActive;
+  final int bonusSeconds; // Add bonus seconds parameter
   final VoidCallback? onTimeUp;
   final Function(String)? onTimeUpdate;
 
@@ -11,6 +13,7 @@ class GameTimerWidget extends StatefulWidget {
     Key? key,
     this.timeLimitSeconds,
     required this.isGameActive,
+    this.bonusSeconds = 0, // Default to 0
     this.onTimeUp,
     this.onTimeUpdate,
   }) : super(key: key);
@@ -41,9 +44,9 @@ class _GameTimerWidgetState extends State<GameTimerWidget> {
         // Notify parent of time update
         widget.onTimeUpdate?.call(_formattedTime);
 
-        // Check if time limit reached
+        // Check if time limit reached (including bonus time)
         if (widget.timeLimitSeconds != null &&
-            _elapsedSeconds >= widget.timeLimitSeconds!) {
+            _elapsedSeconds >= (widget.timeLimitSeconds! + widget.bonusSeconds)) {
           timer.cancel();
           widget.onTimeUp?.call();
         }
@@ -53,8 +56,9 @@ class _GameTimerWidgetState extends State<GameTimerWidget> {
 
   void _updateFormattedTime() {
     if (widget.timeLimitSeconds != null) {
-      // Countdown mode
-      final remaining = widget.timeLimitSeconds! - _elapsedSeconds;
+      // Countdown mode (including bonus time)
+      final totalTime = widget.timeLimitSeconds! + widget.bonusSeconds;
+      final remaining = totalTime - _elapsedSeconds;
       if (remaining <= 0) {
         _formattedTime = "00:00";
       } else {
@@ -79,7 +83,8 @@ class _GameTimerWidgetState extends State<GameTimerWidget> {
   @override
   Widget build(BuildContext context) {
     final isCountdown = widget.timeLimitSeconds != null;
-    final remaining = isCountdown ? widget.timeLimitSeconds! - _elapsedSeconds : 0;
+    final totalTime = isCountdown ? (widget.timeLimitSeconds! + widget.bonusSeconds) : 0;
+    final remaining = isCountdown ? totalTime - _elapsedSeconds : 0;
     final isLowTime = isCountdown && remaining <= 60; // Last minute warning
 
     return Container(
@@ -105,34 +110,34 @@ class _GameTimerWidgetState extends State<GameTimerWidget> {
                 width: 1,
               ),
             ),
-            child: Text(
-              _formattedTime,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: isLowTime ? Colors.red : Colors.blue,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _formattedTime,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isLowTime ? Colors.red : Colors.blue,
+                  ),
+                ),
+                // Show bonus time indicator if there's bonus time
+                if (widget.bonusSeconds > 0) ...[
+                  SizedBox(width: 4),
+                  Text(
+                    '+${widget.bonusSeconds}s',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-          SizedBox(width: 8),
-          if (isCountdown) ...[
-            Text(
-              'remaining',
-              style: TextStyle(
-                fontSize: 12,
-                color: isLowTime ? Colors.red : Colors.blue,
-              ),
-            ),
-          ] else ...[
-            Text(
-              'elapsed',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.blue,
-              ),
-            ),
-          ],
-        ],
+
+    ],
       ),
     );
   }

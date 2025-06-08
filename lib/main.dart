@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sudoku_battle/providers/lobby_provider.dart';
+import 'package:sudoku_battle/providers/powerup_provider.dart';
 import 'package:sudoku_battle/providers/sudoku_provider.dart';
 import 'package:sudoku_battle/screens/auth_screen.dart';
 import 'package:sudoku_battle/screens/home_screen.dart';
@@ -27,6 +28,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => SudokuProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => PowerupProvider()), // Add this
         ChangeNotifierProvider(create: (_) => LobbyProvider()),
       ],
       child: SudokuBattleApp(),

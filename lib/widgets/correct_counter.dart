@@ -20,7 +20,7 @@ class SudokuCorrectCounter extends StatelessWidget {
           const Icon(Icons.check_circle, color: Colors.green),
           const SizedBox(width: 4),
           Text(
-            'Correct: $solved / $totalToSolve',
+            '$solved / $totalToSolve',
             style: const TextStyle(fontSize: 16, color: Colors.green),
           ),
         ],
