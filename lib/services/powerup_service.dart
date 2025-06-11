@@ -1,4 +1,4 @@
-// services/powerup_service.dart - FIXED VERSION (One powerup at a time)
+// services/powerup_service.dart - PLAYER-SPECIFIC SPAWN VERSION
 import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -19,226 +19,176 @@ class PowerupService {
   static const String _playerPowerupsCollection = 'playerPowerups';
   static const String _powerupEffectsCollection = 'powerupEffects';
 
-  // 🔥 FIXED: Updated timing configuration for single powerup spawn
-  static const int MIN_POWERUPS_PER_GAME = 1; // Only 1 powerup at a time
-  static const int MAX_POWERUPS_PER_GAME = 1; // Only 1 powerup at a time
-  static const int MIN_SPAWN_INTERVAL_SECONDS = 45; // Longer intervals between spawns
+  // Pre-generated powerup configuration
+  static const int TOTAL_POWERUPS_PER_GAME = 8;
+  static const int MIN_SPAWN_INTERVAL_SECONDS = 45;
+  static const int MAX_SPAWN_INTERVAL_SECONDS = 90;
 
-  /// Initialize improved powerup system for a lobby
+  /// 🔥 UPDATED: Initialize powerup system with shared timing but NO locations
   static Future<void> initializePowerups(String lobbyId) async {
     try {
-      print('🔮 Initializing powerups for lobby: $lobbyId (one at a time)');
+      print('🔮 Initializing player-specific powerup system for lobby: $lobbyId');
 
-      // Clear any existing powerups
+      // Clear any existing powerup data
       await clearLobbyPowerups(lobbyId);
 
-      // 🔥 FIXED: Only spawn one powerup at a time
-      final spawnTimes = _generateSpawnTimes(1); // Always generate for 1 powerup
+      // Generate shared powerup schedule (timing only, no locations)
+      await _generateSharedPowerupSchedule(lobbyId);
 
-      // Store spawn configuration in lobby metadata
-      await _firestore.collection('lobbies').doc(lobbyId).update({
-        'powerupConfig': {
-          'totalPowerups': 1,
-          'spawnTimes': spawnTimes,
-          'currentSpawnIndex': 0,
-          'gameStartTime': DateTime.now().millisecondsSinceEpoch,
-          'isActive': true,
-          'lastSpawnTime': 0, // Track when last powerup was spawned
-        }
-      });
-
-      print('✅ Powerups initialized: Single powerup system');
-      print('   First spawn time: ${spawnTimes[0]}s');
-
-      // Start the spawn scheduler
-      _startSpawnScheduler(lobbyId);
+      print('✅ Player-specific powerup system initialized');
 
     } catch (e) {
       print('❌ Error initializing powerups: $e');
     }
   }
 
-  /// Generate spawn times with minimum intervals - 🔥 FIXED for single powerup
-  static List<int> _generateSpawnTimes(int totalPowerups) {
-    final spawnTimes = <int>[];
-
-    // Start first powerup after 45-75 seconds
-    int currentTime = 45 + _random.nextInt(31); // 45-75s
-    spawnTimes.add(currentTime);
-
-    print('🎯 Generated spawn time: ${currentTime}s');
-    return spawnTimes;
-  }
-
-  /// Start the spawn scheduler
-  static void _startSpawnScheduler(String lobbyId) {
-    Timer.periodic(Duration(seconds: 5), (timer) async {
-      try {
-        final shouldContinue = await _checkAndSpawnPowerup(lobbyId);
-        if (!shouldContinue) {
-          timer.cancel();
-          print('🏁 Powerup spawning completed for lobby: $lobbyId');
-        }
-      } catch (e) {
-        print('❌ Error in spawn scheduler: $e');
-      }
-    });
-  }
-
-  // Check if it's time to spawn a powerup and spawn it
-  static Future<bool> _checkAndSpawnPowerup(String lobbyId) async {
+  /// 🔥 NEW: Generate powerup schedule with timing only (no specific locations)
+  static Future<void> _generateSharedPowerupSchedule(String lobbyId) async {
     try {
-      // Get lobby powerup config
-      final lobbyDoc = await _firestore.collection('lobbies').doc(lobbyId).get();
-      if (!lobbyDoc.exists) return false;
+      // Generate spawn times and types, but NO locations
+      int currentTime = MIN_SPAWN_INTERVAL_SECONDS;
+      final batch = _firestore.batch();
 
-      final data = lobbyDoc.data() as Map<String, dynamic>;
-      final powerupConfig = data['powerupConfig'] as Map<String, dynamic>?;
+      for (int i = 0; i < TOTAL_POWERUPS_PER_GAME; i++) {
+        final powerupType = _getRandomPowerupType();
+        final powerupId = 'powerup_${DateTime.now().millisecondsSinceEpoch}_$i';
 
-      if (powerupConfig == null || powerupConfig['isActive'] != true) {
-        return false;
-      }
+        // Create shared spawn document with timing only
+        final spawnRef = _firestore
+            .collection('lobbies')
+            .doc(lobbyId)
+            .collection(_powerupSpawnsCollection)
+            .doc(powerupId);
 
-      // 🔥 FIXED: Check if there's already an active powerup on the board
-      final activeSpawns = await _firestore
-          .collection('lobbies')
-          .doc(lobbyId)
-          .collection(_powerupSpawnsCollection)
-          .where('isActive', isEqualTo: true)
-          .get();
-
-      if (activeSpawns.docs.isNotEmpty) {
-        print('⏳ Powerup already active on board, waiting...');
-        return true; // Continue checking, but don't spawn yet
-      }
-
-      final spawnTimes = List<int>.from(powerupConfig['spawnTimes'] ?? []);
-      final gameStartTime = powerupConfig['gameStartTime'] ?? 0;
-      final lastSpawnTime = powerupConfig['lastSpawnTime'] ?? 0;
-
-      // Calculate elapsed time since game start
-      final elapsedSeconds = (DateTime.now().millisecondsSinceEpoch - gameStartTime) ~/ 1000;
-      final nextSpawnTime = spawnTimes.isNotEmpty ? spawnTimes[0] : 60;
-
-      // Check if it's time to spawn AND enough time has passed since last spawn
-      final timeSinceLastSpawn = (DateTime.now().millisecondsSinceEpoch - lastSpawnTime) ~/ 1000;
-
-      if (elapsedSeconds >= nextSpawnTime && timeSinceLastSpawn >= MIN_SPAWN_INTERVAL_SECONDS) {
-        await _spawnRandomPowerup(lobbyId);
-
-        // Update last spawn time and generate next spawn time
-        final nextSpawnDelay = MIN_SPAWN_INTERVAL_SECONDS + _random.nextInt(31); // 45-75s
-        final newSpawnTime = elapsedSeconds + nextSpawnDelay;
-
-        await _firestore.collection('lobbies').doc(lobbyId).update({
-          'powerupConfig.lastSpawnTime': DateTime.now().millisecondsSinceEpoch,
-          'powerupConfig.spawnTimes': [newSpawnTime], // Set next spawn time
+        batch.set(spawnRef, {
+          'id': powerupId,
+          'type': powerupType.toString(),
+          'spawnTime': currentTime,
+          'isActive': false, // Will become active when spawn time is reached
+          'claimedBy': null,
+          'claimedAt': null,
+          'createdAt': DateTime.now().millisecondsSinceEpoch,
+          // 🔥 KEY: NO row/col stored - will be calculated locally per player
         });
 
-        print('⏰ Spawned powerup at ${elapsedSeconds}s, next spawn at ${newSpawnTime}s');
-        return true;
+        print('📍 Scheduled ${powerupType.toString()} for ${currentTime}s (location calculated per player)');
+
+        // Calculate next spawn time
+        currentTime += MIN_SPAWN_INTERVAL_SECONDS + _random.nextInt(
+            MAX_SPAWN_INTERVAL_SECONDS - MIN_SPAWN_INTERVAL_SECONDS + 1
+        );
       }
 
-      return true; // Continue checking
+      await batch.commit();
+      print('✅ Created ${TOTAL_POWERUPS_PER_GAME} shared powerup spawns (no fixed locations)');
+
     } catch (e) {
-      print('❌ Error checking powerup spawn: $e');
-      return false;
+      print('❌ Error generating shared spawns: $e');
     }
   }
 
-  /// Spawn a random powerup at a random empty location
-  static Future<void> _spawnRandomPowerup(String lobbyId) async {
+  /// 🔥 SIMPLIFIED: Just activate powerups at the right time (no location assignment)
+  static Future<void> checkAndSpawnPowerups(String lobbyId, int gameTimeSeconds) async {
     try {
-      // Get available empty cells
-      final availableCells = await _getAvailableEmptyCells(lobbyId);
+      print('🔍 Checking powerups at ${gameTimeSeconds}s...');
 
-      if (availableCells.isEmpty) {
-        print('⚠️ No available empty cells for powerup spawn');
+      // Get all inactive powerups that should be activated
+      final inactivePowerups = await _firestore
+          .collection('lobbies')
+          .doc(lobbyId)
+          .collection(_powerupSpawnsCollection)
+          .where('isActive', isEqualTo: false)
+          .get();
+
+      if (inactivePowerups.docs.isEmpty) {
         return;
       }
 
-      // Pick random cell and powerup type
-      final cell = availableCells[_random.nextInt(availableCells.length)];
-      final powerupType = _getRandomPowerupType();
+      final batch = _firestore.batch();
+      int activatedCount = 0;
 
-      // Create powerup spawn
-      final spawn = PowerupSpawn(
-        id: '${DateTime.now().millisecondsSinceEpoch}_${_random.nextInt(1000)}',
-        type: powerupType,
-        row: cell['row']!,
-        col: cell['col']!,
-        spawnTime: DateTime.now(),
-      );
+      for (final doc in inactivePowerups.docs) {
+        final data = doc.data();
+        final spawnTime = data['spawnTime'] as int? ?? 0;
 
-      // Save to Firestore
-      await _firestore
-          .collection('lobbies')
-          .doc(lobbyId)
-          .collection(_powerupSpawnsCollection)
-          .doc(spawn.id)
-          .set(spawn.toMap());
+        if (spawnTime <= gameTimeSeconds) {
+          // Just activate - location will be calculated locally per player
+          batch.update(doc.reference, {
+            'isActive': true,
+            'activatedAt': DateTime.now().millisecondsSinceEpoch,
+          });
 
-      print('✨ Spawned ${_getDisplayName(powerupType)} at (${cell['row']}, ${cell['col']})');
+          activatedCount++;
+          print('✨ Activated ${data['type']} (location calculated per player)');
+        }
+      }
+
+      if (activatedCount > 0) {
+        await batch.commit();
+        print('🎯 Activated $activatedCount powerups');
+      }
 
     } catch (e) {
-      print('❌ Error spawning powerup: $e');
+      print('❌ Error checking powerup spawns: $e');
     }
   }
 
-  /// Get available empty cells for powerup spawning (improved)
-  static Future<List<Map<String, int>>> _getAvailableEmptyCells(String lobbyId) async {
+  /// 🔥 NEW: Get powerup spawns with player-specific locations calculated locally
+  static Stream<List<PowerupSpawn>> getPowerupSpawns(String lobbyId) {
+    return _firestore
+        .collection('lobbies')
+        .doc(lobbyId)
+        .collection(_powerupSpawnsCollection)
+        .where('isActive', isEqualTo: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => PowerupSpawn.fromFirestore(doc))
+        .toList());
+  }
+
+  /// 🔥 NEW: Calculate player-specific powerup location locally
+  static Map<String, int>? calculatePlayerSpecificLocation(
+      String powerupId,
+      List<List<int?>> currentBoard, // Player's current board state
+      List<List<bool>> givenCells,   // Original given cells
+      ) {
     try {
-      // Get lobby to find shared puzzle
-      final lobbyDoc = await _firestore.collection('lobbies').doc(lobbyId).get();
-      if (!lobbyDoc.exists) return [];
+      // Get all empty cells for this specific player
+      final emptyCells = <Map<String, int>>[];
 
-      final lobbyData = lobbyDoc.data() as Map<String, dynamic>;
-      final sharedPuzzle = lobbyData['sharedPuzzle'] as Map<String, dynamic>?;
-
-      if (sharedPuzzle == null) return [];
-
-      // Convert puzzle data
-      final puzzleFlat = (sharedPuzzle['puzzleFlat'] as List).cast<int>();
-      final availableCells = <Map<String, int>>[];
-
-      // Get all players' current game states to see what they've solved
-      final gameStates = await _firestore
-          .collection('lobbies')
-          .doc(lobbyId)
-          .collection('gameStates')
-          .get();
-
-      // Create a set of solved positions across all players
-      final Set<String> solvedPositions = {};
-
-      for (final gameStateDoc in gameStates.docs) {
-        // You could add logic here to track solved positions per player
-        // For now, we'll just check if the original puzzle cell is empty
-      }
-
-      // Find empty cells from the original puzzle (value = 0)
-      for (int i = 0; i < puzzleFlat.length; i++) {
-        if (puzzleFlat[i] == 0) { // Only empty cells from original puzzle
-          final row = i ~/ 9;
-          final col = i % 9;
-          final positionKey = '$row,$col';
-
-          // Only add if not solved by any player yet
-          if (!solvedPositions.contains(positionKey)) {
-            availableCells.add({'row': row, 'col': col});
+      for (int row = 0; row < 9; row++) {
+        for (int col = 0; col < 9; col++) {
+          // Cell is empty if it's not a given cell AND not solved by player
+          if (!givenCells[row][col] && (currentBoard[row][col] == null || currentBoard[row][col] == 0)) {
+            emptyCells.add({'row': row, 'col': col});
           }
         }
       }
 
-      print('🎯 Found ${availableCells.length} available empty cells for powerup spawn');
-      return availableCells;
+      if (emptyCells.isEmpty) {
+        print('⚠️ No empty cells available for powerup $powerupId');
+        return null;
+      }
+
+      // Use powerup ID as seed for consistent but unique positioning per player/powerup combo
+      final seed = powerupId.hashCode;
+      final rng = Random(seed);
+
+      // Shuffle with deterministic seed so same powerupId always gives same result for same board state
+      emptyCells.shuffle(rng);
+
+      final selectedLocation = emptyCells.first;
+
+      print('🎯 Calculated location for powerup $powerupId: (${selectedLocation['row']}, ${selectedLocation['col']})');
+      return selectedLocation;
+
     } catch (e) {
-      print('❌ Error getting available cells: $e');
-      return [];
+      print('❌ Error calculating player-specific location: $e');
+      return null;
     }
   }
 
-  /// Claim a powerup when player solves the cell
+  /// 🔥 UPDATED: Claim powerup using player-calculated location
   static Future<bool> claimPowerup(String lobbyId, String spawnId, int row, int col) async {
     try {
       final user = _auth.currentUser;
@@ -247,7 +197,7 @@ class PowerupService {
       print('🎯 Attempting to claim powerup $spawnId at ($row, $col)');
 
       return await _firestore.runTransaction((transaction) async {
-        // Get powerup spawn
+        // Get shared spawn
         final spawnRef = _firestore
             .collection('lobbies')
             .doc(lobbyId)
@@ -261,30 +211,35 @@ class PowerupService {
           return false;
         }
 
-        final spawn = PowerupSpawn.fromFirestore(spawnDoc);
+        final spawnData = spawnDoc.data() as Map<String, dynamic>;
 
-        // Check if powerup is still available and at correct position
-        if (!spawn.isActive || spawn.claimedBy != null) {
-          print('❌ Powerup already claimed or inactive');
+        // 🔥 CRITICAL: Check if already claimed (first come, first served)
+        if (spawnData['claimedBy'] != null) {
+          print('❌ Powerup already claimed by ${spawnData['claimedBy']}');
           return false;
         }
 
-        if (spawn.row != row || spawn.col != col) {
-          print('❌ Powerup position mismatch');
+        // Verify spawn is active
+        if (spawnData['isActive'] != true) {
+          print('❌ Powerup not active');
           return false;
         }
 
-        // Claim the powerup
+        // 🔥 CLAIM IT: Update spawn to mark as claimed
         transaction.update(spawnRef, {
           'claimedBy': user.uid,
           'claimedAt': DateTime.now().millisecondsSinceEpoch,
-          'isActive': false,
+          'claimedLocation': {'row': row, 'col': col}, // Store where it was claimed
         });
 
-        // Add to player's powerups
+        // Add to claiming player's powerups
+        final powerupType = PowerupType.values.firstWhere(
+                (e) => e.toString() == spawnData['type']
+        );
+
         final playerPowerup = PlayerPowerup(
           id: '${user.uid}_${DateTime.now().millisecondsSinceEpoch}',
-          type: spawn.type,
+          type: powerupType,
           playerId: user.uid,
           obtainedAt: DateTime.now(),
         );
@@ -297,7 +252,7 @@ class PowerupService {
 
         transaction.set(playerPowerupRef, playerPowerup.toMap());
 
-        print('✅ Successfully claimed ${spawn.type.toString()} powerup');
+        print('✅ Successfully claimed ${powerupType.toString()} powerup');
         return true;
       });
 
@@ -307,14 +262,14 @@ class PowerupService {
     }
   }
 
-  /// Use a powerup
+  // ... REST OF THE METHODS REMAIN THE SAME (usePowerup, effects, etc.)
+
   static Future<bool> usePowerup(String lobbyId, String powerupId) async {
     try {
       final user = _auth.currentUser;
       if (user == null) return false;
 
       return await _firestore.runTransaction((transaction) async {
-        // Get player powerup
         final powerupRef = _firestore
             .collection('lobbies')
             .doc(lobbyId)
@@ -327,18 +282,15 @@ class PowerupService {
 
         final powerup = PlayerPowerup.fromFirestore(powerupDoc);
 
-        // Verify ownership and usage status
         if (powerup.playerId != user.uid || powerup.isUsed) {
           return false;
         }
 
-        // Mark as used
         transaction.update(powerupRef, {
           'isUsed': true,
           'usedAt': DateTime.now().millisecondsSinceEpoch,
         });
 
-        // Apply powerup effect
         await _applyPowerupEffect(lobbyId, powerup, transaction);
 
         return true;
@@ -350,7 +302,6 @@ class PowerupService {
     }
   }
 
-  /// Apply powerup effect
   static Future<void> _applyPowerupEffect(
       String lobbyId,
       PlayerPowerup powerup,
@@ -360,7 +311,6 @@ class PowerupService {
 
     switch (powerup.type) {
       case PowerupType.freezeOpponent:
-      // Find opponent and apply freeze effect
         final opponentId = await _getOpponentId(lobbyId, powerup.playerId);
         if (opponentId != null) {
           final effect = PowerupEffect(
@@ -384,7 +334,6 @@ class PowerupService {
         break;
 
       case PowerupType.showSolution:
-      // Apply show solution effect to user
         final effect = PowerupEffect(
           id: '${powerup.id}_effect',
           type: powerup.type,
@@ -405,10 +354,8 @@ class PowerupService {
         break;
 
       case PowerupType.bomb:
-      // Apply bomb effect to opponent
         final opponentId = await _getOpponentId(lobbyId, powerup.playerId);
         if (opponentId != null) {
-          // Get a random 3x3 area to bomb
           final bombArea = _getRandomBombArea();
 
           final effect = PowerupEffect(
@@ -435,7 +382,6 @@ class PowerupService {
         break;
 
       case PowerupType.shield:
-      // Apply shield effect
         final effect = PowerupEffect(
           id: '${powerup.id}_effect',
           type: powerup.type,
@@ -455,12 +401,10 @@ class PowerupService {
         break;
 
       default:
-      // Immediate effects don't need to be stored
         break;
     }
   }
 
-  /// Get opponent player ID
   static Future<String?> _getOpponentId(String lobbyId, String playerId) async {
     try {
       final lobbyDoc = await _firestore.collection('lobbies').doc(lobbyId).get();
@@ -483,19 +427,6 @@ class PowerupService {
       print('❌ Error getting opponent ID: $e');
       return null;
     }
-  }
-
-  // Re-export existing methods that are still needed
-  static Stream<List<PowerupSpawn>> getPowerupSpawns(String lobbyId) {
-    return _firestore
-        .collection('lobbies')
-        .doc(lobbyId)
-        .collection(_powerupSpawnsCollection)
-        .where('isActive', isEqualTo: true)
-        .snapshots()
-        .map((snapshot) => snapshot.docs
-        .map((doc) => PowerupSpawn.fromFirestore(doc))
-        .toList());
   }
 
   static Stream<List<PlayerPowerup>> getPlayerPowerups(String lobbyId, String playerId) {
@@ -525,7 +456,6 @@ class PowerupService {
         .toList());
   }
 
-  /// Clear all powerups for a lobby
   static Future<void> clearLobbyPowerups(String lobbyId) async {
     try {
       final batch = _firestore.batch();
@@ -571,10 +501,8 @@ class PowerupService {
     }
   }
 
-  /// Clean up expired effects
   static Future<void> cleanupExpiredEffects(String lobbyId) async {
     try {
-      final now = DateTime.now();
       final effects = await _firestore
           .collection('lobbies')
           .doc(lobbyId)
@@ -597,7 +525,6 @@ class PowerupService {
     }
   }
 
-  /// Mark bomb effect as inactive
   static Future<void> markBombEffectInactive(String lobbyId, String effectId) async {
     try {
       await _firestore
@@ -611,7 +538,6 @@ class PowerupService {
     }
   }
 
-  /// Use shield (remove it when protecting from an attack)
   static Future<void> useShield(String lobbyId, String playerId) async {
     try {
       final effects = await _firestore
@@ -631,7 +557,6 @@ class PowerupService {
     }
   }
 
-  /// Check if player has active shield
   static Future<bool> hasActiveShield(String lobbyId, String playerId) async {
     try {
       final effects = await _firestore
@@ -650,79 +575,28 @@ class PowerupService {
     }
   }
 
-  /// Get random powerup type with weighted probability
   static PowerupType getRandomPowerupType() {
-    // Weighted probabilities for different powerup types
-    const weights = <PowerupType, int>{
-      PowerupType.revealTwoCells: 20,
-      PowerupType.extraHints: 15,
-      PowerupType.clearMistakes: 15,
-      PowerupType.freezeOpponent: 12,
-      PowerupType.timeBonus: 10,
-      PowerupType.showSolution: 8,
-      PowerupType.shield: 10,
-      PowerupType.bomb: 10,
-    };
-
-    final totalWeight = weights.values.reduce((a, b) => a + b);
-    final randomValue = _random.nextInt(totalWeight);
-
-    int currentWeight = 0;
-    for (final entry in weights.entries) {
-      currentWeight += entry.value;
-      if (randomValue < currentWeight) {
-        return entry.key;
-      }
-    }
-
-    return PowerupType.revealTwoCells; // Fallback
+    return _getRandomPowerupType();
   }
 
-  /// Get random 3x3 bomb area
-  static Map<String, int> _getRandomBombArea() {
-    // Possible 3x3 areas in a 9x9 grid (each 3x3 box)
-    final areas = [
-      {'startRow': 0, 'startCol': 0}, // Top-left
-      {'startRow': 0, 'startCol': 3}, // Top-middle
-      {'startRow': 0, 'startCol': 6}, // Top-right
-      {'startRow': 3, 'startCol': 0}, // Middle-left
-      {'startRow': 3, 'startCol': 3}, // Center
-      {'startRow': 3, 'startCol': 6}, // Middle-right
-      {'startRow': 6, 'startCol': 0}, // Bottom-left
-      {'startRow': 6, 'startCol': 3}, // Bottom-middle
-      {'startRow': 6, 'startCol': 6}, // Bottom-right
-    ];
-
-    return areas[_random.nextInt(areas.length)];
-  }
-
-  /// Get random powerup type with balanced distribution
   static PowerupType _getRandomPowerupType() {
     final types = PowerupType.values;
     return types[_random.nextInt(types.length)];
   }
 
-  /// Get display name for powerup type
-  static String _getDisplayName(PowerupType type) {
-    switch (type) {
-      case PowerupType.revealTwoCells:
-        return 'Reveal 2 Cells';
-      case PowerupType.freezeOpponent:
-        return 'Freeze Opponent';
-      case PowerupType.extraHints:
-        return 'Extra Hints';
-      case PowerupType.clearMistakes:
-        return 'Clear Mistakes';
-      case PowerupType.timeBonus:
-        return 'Time Bonus';
-      case PowerupType.showSolution:
-        return 'Show Solution';
-      case PowerupType.shield:
-        return 'Shield';
-      case PowerupType.bomb:
-        return 'Bomb';
-      default:
-        return 'Unknown Powerup';
-    }
+  static Map<String, int> _getRandomBombArea() {
+    final areas = [
+      {'startRow': 0, 'startCol': 0},
+      {'startRow': 0, 'startCol': 3},
+      {'startRow': 0, 'startCol': 6},
+      {'startRow': 3, 'startCol': 0},
+      {'startRow': 3, 'startCol': 3},
+      {'startRow': 3, 'startCol': 6},
+      {'startRow': 6, 'startCol': 0},
+      {'startRow': 6, 'startCol': 3},
+      {'startRow': 6, 'startCol': 6},
+    ];
+
+    return areas[_random.nextInt(areas.length)];
   }
 }

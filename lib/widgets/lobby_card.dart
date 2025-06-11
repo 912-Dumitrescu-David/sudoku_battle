@@ -230,7 +230,7 @@ class LobbyCard extends StatelessWidget {
         return Icons.grid_3x3;
       case GameMode.powerup:
         return Icons.flash_on;
-      case GameMode.tournament:
+      case GameMode.coop:
         return Icons.emoji_events;
     }
   }
@@ -241,8 +241,8 @@ class LobbyCard extends StatelessWidget {
         return 'Classic Mode';
       case GameMode.powerup:
         return 'Power-Up Mode';
-      case GameMode.tournament:
-        return 'Tournament';
+      case GameMode.coop:
+        return 'Co-op Mode';
     }
   }
 

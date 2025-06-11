@@ -322,8 +322,8 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
         return 'Classic';
       case GameMode.powerup:
         return 'Power-Up';
-      case GameMode.tournament:
-        return 'Tournament';
+      case GameMode.coop:
+        return 'Co-op';
     }
   }
 
@@ -333,8 +333,8 @@ class _CreateLobbyDialogState extends State<CreateLobbyDialog> {
         return 'Traditional Sudoku race';
       case GameMode.powerup:
         return 'Sudoku with special abilities';
-      case GameMode.tournament:
-        return 'Elimination tournament';
+      case GameMode.coop:
+        return 'Collaborative Sudoku solving';
     }
   }
 }

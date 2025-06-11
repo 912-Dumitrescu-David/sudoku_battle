@@ -1,4 +1,5 @@
-// screens/multiplayer_sudoku_screen.dart - FIXED LAYOUT VERSION
+// screens/multiplayer_sudoku_screen.dart - FIXED
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -105,25 +106,27 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
         _hintButtonOffset = Offset(screenWidth * 0.85, 130);
       });
 
-      // 🔥 FIXED: Initialize powerup system ONLY for powerup game mode
+      // Initialize powerup system ONLY for powerup game mode
       if (widget.lobby.gameMode == GameMode.powerup) {
-        print('🔮 Initializing powerups for powerup mode');
+        print('🔮 Initializing powerups for powerup mode (pre-generated system)');
+
+        // Initialize powerup provider first
         powerupProvider.initialize(widget.lobby.id);
+
+        // Set up SudokuProvider with powerups. This will correctly set the callback.
         sudokuProvider.initializePowerups(powerupProvider);
 
-        // 🔥 FIXED: Set up the callback for powerup effects
-        powerupProvider.setSudokuProviderCallback((effectType) {
-          _applyPowerupEffectToSudoku(effectType, sudokuProvider);
-        });
+        // 🔥 FIX: REMOVED the redundant callback setup that was causing the issue.
+        // The SudokuProvider now handles all powerup effect logic.
       } else {
         print('⚠️ Classic mode - powerups disabled');
       }
 
-      // 🔥 FIXED: Load the puzzle with game mode information
+      // Load the puzzle with game mode information
       sudokuProvider.loadPuzzle(
         widget.puzzle,
         gameSettings: widget.lobby.gameSettings,
-        gameMode: widget.lobby.gameMode, // Pass the game mode
+        gameMode: widget.lobby.gameMode,
       );
 
       // Start the game after a short delay
@@ -133,38 +136,25 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             _gameStarted = true;
           });
           _stopwatch.start();
+
+          // Start powerup system if in powerup mode
+          if (widget.lobby.gameMode == GameMode.powerup) {
+            powerupProvider.startGame();
+          }
         }
       });
     });
   }
 
-  // 🔥 NEW: Apply powerup effects to SudokuProvider
-  void _applyPowerupEffectToSudoku(String effectType, SudokuProvider sudokuProvider) {
-    print('⚡ Applying powerup effect: $effectType');
-
-    switch (effectType) {
-      case 'revealTwoCells':
-        sudokuProvider.applyRevealCellPowerup();
-        break;
-      case 'extraHints':
-        sudokuProvider.applyExtraHintsPowerup();
-        break;
-      case 'clearMistakes':
-        sudokuProvider.applyClearErrorsPowerup();
-        break;
-      case 'timeBonus':
-        sudokuProvider.applyTimeBonusPowerup();
-        break;
-      default:
-        print('⚠️ Unknown powerup effect type: $effectType');
-    }
-  }
+  // 🔥 FIX: REMOVED the redundant _applyPowerupEffectToSudoku method.
+  // This logic is now correctly handled inside the SudokuProvider.
 
   @override
   void dispose() {
     _stopwatch.stop();
     _timer.cancel();
     _gameStatesSubscription?.cancel();
+    Provider.of<PowerupProvider>(context, listen: false).dispose();
     super.dispose();
   }
 
@@ -184,13 +174,13 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
         if (sudokuProvider.progress != _lastProgress) {
           _lastProgress = sudokuProvider.progress;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            _updateMyProgress(sudokuProvider.progress);
+            _updateMyProgress(sudokuProvider);
           });
         }
 
         // Check end game conditions
         if (!_gameEnded) {
-          if (sudokuProvider.mistakesCount >= sudokuProvider.maxMistakes) {
+          if ((sudokuProvider.maxMistakes > 0) && (sudokuProvider.mistakesCount >= sudokuProvider.maxMistakes)) {
             Future.microtask(() async {
               _stopGame();
               await _handleGameEnd(false, sudokuProvider);
@@ -218,6 +208,13 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             backgroundColor: widget.lobby.gameMode == GameMode.powerup ? Colors.purple : Theme.of(context).primaryColor,
             foregroundColor: Colors.white,
             actions: [
+              if (widget.lobby.gameMode == GameMode.powerup) ...[
+                IconButton(
+                  icon: Icon(Icons.info_outline),
+                  onPressed: _showPowerupInfo,
+                  tooltip: 'Powerup Info',
+                ),
+              ],
               IconButton(
                 icon: Icon(Icons.people),
                 onPressed: _showPlayersList,
@@ -226,20 +223,19 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
           ),
           body: Stack(
             children: [
-              // 🔥 FIXED: Better layout structure for web and mobile
               LayoutBuilder(
                 builder: (context, constraints) {
                   final isWeb = kIsWeb;
                   final screenHeight = constraints.maxHeight;
 
-                  // Calculate heights based on platform
                   final progressHeight = 80.0;
                   final statsHeight = 60.0;
                   final powerupBarHeight = widget.lobby.gameMode == GameMode.powerup ?
                   (isWeb ? 100.0 : 80.0) : 0.0;
                   final keypadHeight = isWeb ? 120.0 : 100.0;
 
-                  final availableHeight = screenHeight - progressHeight - statsHeight - powerupBarHeight - keypadHeight;
+                  final availableHeightForBoard = screenHeight - progressHeight - statsHeight - powerupBarHeight - keypadHeight - (AppBar().preferredSize.height) - MediaQuery.of(context).padding.top;
+
 
                   return Column(
                     children: [
@@ -297,20 +293,20 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
 
                       // Sudoku board
                       Container(
-                        height: availableHeight,
+                        height: availableHeightForBoard > 0 ? availableHeightForBoard : 300,
                         padding: const EdgeInsets.all(8.0),
                         child: SudokuBoard(),
                       ),
 
-                      // 🔥 FIXED: Powerup bar with proper spacing
+                      // Powerup bar with proper spacing
                       if (widget.lobby.gameMode == GameMode.powerup)
-                        Container(
+                        SizedBox(
                           height: powerupBarHeight,
                           child: PowerupBar(),
                         ),
 
-                      // 🔥 FIXED: Number keypad with consistent height
-                      Container(
+                      // Number keypad with consistent height
+                      SizedBox(
                         height: keypadHeight,
                         child: const NumberKeypad(),
                       ),
@@ -319,7 +315,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
                 },
               ),
 
-              // 🔥 FIXED: Hint button only if hints are enabled
+              // Hint button only if hints are enabled
               if (widget.lobby.gameSettings.allowHints)
                 Positioned(
                   left: _hintButtonOffset.dx,
@@ -328,8 +324,12 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
                     feedback: _buildHintButton(),
                     childWhenDragging: Opacity(opacity: 0.4, child: _buildHintButton()),
                     onDragEnd: (details) {
+                      final size = MediaQuery.of(context).size;
                       setState(() {
-                        _hintButtonOffset = details.offset;
+                        _hintButtonOffset = Offset(
+                            details.offset.dx.clamp(0, size.width - 60),
+                            details.offset.dy.clamp(0, size.height - 60)
+                        );
                       });
                     },
                     child: _buildHintButton(),
@@ -343,14 +343,56 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     );
   }
 
+  void _showPowerupInfo() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.flash_on, color: Colors.purple),
+            SizedBox(width: 8),
+            Text('Powerup System'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Player-Specific Powerups',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 8),
+            Text('• 8 powerups are scheduled per game.'),
+            Text('• They spawn every 45-90 seconds.'),
+            Text('• Each player gets a unique, valid spawn location.'),
+            Text('• Powerups only appear in your unsolved cells.'),
+            SizedBox(height: 12),
+            Text(
+              'Available Powerups:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 4),
+            ...PowerupType.values.map((type) => Text('${type.iconPath} ${type.displayName}')).toList(),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _handleGameEnd(bool isWin, SudokuProvider provider, {bool timeUp = false}) async {
     final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
 
     print('🏁 Game ended! Win: $isWin, TimeUp: $timeUp');
-    print('🎮 Lobby is ranked: ${widget.lobby.isRanked}');
-    print('👤 Current user: ${currentUser?.displayName ?? currentUser?.uid}');
 
-    // Update game state
     await GameStateService.updatePlayerGameStatus(
       widget.lobby.id,
       isCompleted: isWin,
@@ -360,97 +402,31 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
       mistakes: provider.mistakesCount,
     );
 
-    if (isWin) {
-      // Small delay for Firestore transaction
-      await Future.delayed(Duration(milliseconds: 500));
+    await Future.delayed(Duration(milliseconds: 500));
 
-      // Get game result to determine placement and winner info
-      final gameResult = await GameStateService.getGameResult(
-          widget.lobby.id,
-          currentUser?.uid ?? ''
-      );
+    final gameResult = await GameStateService.getGameResult(
+        widget.lobby.id,
+        currentUser.uid
+    );
 
-      print('🏆 Game Result: ${gameResult}');
+    final opponentStillPlaying = _opponentStates.values
+        .any((state) => !state.isCompleted && state.playerId != currentUser.uid);
 
-      final opponentStillPlaying = _opponentStates.values
-          .any((state) => !state.isCompleted);
-
-      // For ranked games, we want to know who actually won
-      String? actualWinnerName;
-      bool isFirstPlace = true;
-
-      if (widget.lobby.isRanked) {
-        // In ranked games, determine the actual winner
-        if (gameResult['isFirstPlace'] == true) {
-          actualWinnerName = currentUser?.displayName ?? 'You';
-          isFirstPlace = true;
-          print('🥇 You got FIRST PLACE in ranked match!');
-        } else {
-          actualWinnerName = gameResult['winnerName'];
-          isFirstPlace = false;
-          print('🥈 You got SECOND PLACE in ranked match. Winner: $actualWinnerName');
-        }
-      } else {
-        // Casual games
-        actualWinnerName = gameResult['winnerName'] ?? currentUser?.displayName ?? 'You';
-        isFirstPlace = gameResult['isFirstPlace'] ?? true;
-      }
-
-      print('🏆 Navigating to result screen with:');
-      print('   isWin: true');
-      print('   isFirstPlace: $isFirstPlace');
-      print('   winnerName: $actualWinnerName');
-      print('   lobby.isRanked: ${widget.lobby.isRanked}');
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => MultiplayerResultScreen(
-            isWin: true,
-            time: _formattedTime,
-            solvedBlocks: provider.solved,
-            totalToSolve: _calculateTotalToSolve(),
-            lobby: widget.lobby,
-            winnerName: actualWinnerName,
-            isOpponentStillPlaying: opponentStillPlaying,
-            isFirstPlace: isFirstPlace,
-          ),
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MultiplayerResultScreen(
+          isWin: isWin,
+          time: _formattedTime,
+          solvedBlocks: provider.solved,
+          totalToSolve: _calculateTotalToSolve(),
+          lobby: widget.lobby,
+          winnerName: gameResult['winnerName'],
+          isOpponentStillPlaying: opponentStillPlaying,
+          isFirstPlace: gameResult['isFirstPlace'] ?? (isWin),
         ),
-      );
-    } else {
-      // Loss or time up
-      final opponentStillPlaying = _opponentStates.values
-          .any((state) => !state.isCompleted);
-
-      // For losses, we need to determine who actually won
-      String? actualWinnerName;
-
-      if (widget.lobby.isRanked && !opponentStillPlaying) {
-        // Check who won the ranked match
-        final gameResult = await GameStateService.getGameResult(
-            widget.lobby.id,
-            currentUser?.uid ?? ''
-        );
-        actualWinnerName = gameResult['winnerName'];
-        print('💔 You LOST the ranked match. Winner: $actualWinnerName');
-      }
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => MultiplayerResultScreen(
-            isWin: false,
-            time: _formattedTime,
-            solvedBlocks: provider.solved,
-            totalToSolve: _calculateTotalToSolve(),
-            lobby: widget.lobby,
-            winnerName: actualWinnerName,
-            isOpponentStillPlaying: opponentStillPlaying,
-            isFirstPlace: false,
-          ),
-        ),
-      );
-    }
+      ),
+    );
   }
 
   Widget _buildMyProgress(double progress) {
@@ -486,14 +462,14 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     );
   }
 
-  void _updateMyProgress(double progress) {
+  void _updateMyProgress(SudokuProvider provider) {
     GameStateService.updatePlayerGameStatus(
       widget.lobby.id,
       isCompleted: false,
       completionTime: _formattedTime,
-      solvedCells: Provider.of<SudokuProvider>(context, listen: false).solved,
+      solvedCells: provider.solved,
       totalCells: _calculateTotalToSolve(),
-      mistakes: Provider.of<SudokuProvider>(context, listen: false).mistakesCount,
+      mistakes: provider.mistakesCount,
     );
   }
 
@@ -512,8 +488,37 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
           Text(widget.lobby.gameMode == GameMode.powerup
               ? 'Get ready to collect powerups and solve!'
               : 'Get ready to solve!'),
+          if (widget.lobby.gameMode == GameMode.powerup) ...[
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              margin: EdgeInsets.symmetric(horizontal: 32),
+              decoration: BoxDecoration(
+                color: Colors.purple.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.purple.withOpacity(0.3)),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    '🔮 Player-Specific Powerups',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.purple,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Powerups will appear in your unsolved cells.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: Colors.purple[700]),
+                  ),
+                ],
+              ),
+            ),
+          ],
           SizedBox(height: 20),
-          _buildPlayersList(),
+          _buildPlayersListWidget(),
         ],
       ),
     );
@@ -541,8 +546,8 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
       child: Row(
         children: [
           Icon(
-            opponent.isCompleted ? Icons.check_circle : Icons.circle,
-            color: opponent.isCompleted ? Colors.green : Colors.blue,
+            opponent.isCompleted ? Icons.check_circle : Icons.circle_outlined,
+            color: opponent.isCompleted ? Colors.green : Colors.grey,
             size: 12,
           ),
           SizedBox(width: 8),
@@ -550,7 +555,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             flex: 2,
             child: Text(
               opponent.playerName,
-              style: TextStyle(fontSize: 10),
+              style: TextStyle(fontSize: 10, fontWeight: opponent.isCompleted ? FontWeight.normal : FontWeight.bold),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -569,14 +574,14 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             opponent.isCompleted
                 ? 'Done!'
                 : '${(opponent.progress * 100).toInt()}%',
-            style: TextStyle(fontSize: 10),
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildPlayersList() {
+  Widget _buildPlayersListWidget() {
     return Card(
       child: Padding(
         padding: EdgeInsets.all(16),
@@ -590,7 +595,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             ...widget.lobby.playersList.map((player) =>
                 ListTile(
                   leading: CircleAvatar(
-                    child: Text(player.name[0].toUpperCase()),
+                    child: Text(player.name.isNotEmpty ? player.name[0].toUpperCase() : '?'),
                   ),
                   title: Text(player.name),
                   subtitle: Text('Rating: ${player.rating}'),
@@ -612,7 +617,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
           children: widget.lobby.playersList.map((player) =>
               ListTile(
                 leading: CircleAvatar(
-                  child: Text(player.name[0].toUpperCase()),
+                  child: Text(player.name.isNotEmpty ? player.name[0].toUpperCase() : '?'),
                 ),
                 title: Text(player.name),
                 subtitle: Text('Rating: ${player.rating}'),
@@ -630,13 +635,17 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
 
   int _calculateTotalToSolve() {
     int count = 0;
-    final puzzle = widget.puzzle['puzzle'] as List<List<int>>;
-    for (final row in puzzle) {
-      for (final cell in row) {
-        if (cell == 0) count++;
+    if (widget.puzzle['puzzle'] is List) {
+      final puzzle = widget.puzzle['puzzle'] as List;
+      for (final row in puzzle) {
+        if (row is List) {
+          for (final cell in row) {
+            if (cell == 0) count++;
+          }
+        }
       }
     }
-    return count;
+    return count > 0 ? count : 45; // Fallback
   }
 
   Widget _buildHintButton() {

@@ -13,9 +13,16 @@ import 'package:sudoku_battle/providers/theme_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
+  } on FirebaseException catch (e) {
+    print('Firebase initialization error: ${e.message}');
+  }
   // In your main.dart, after Firebase.initializeApp()
   FirebaseAuth.instance.authStateChanges().listen((User? user) {
     if (user != null) {

@@ -1,4 +1,4 @@
-// widgets/fixed_powerup_bar.dart
+// widgets/powerup_bar_widget.dart - FIXED VERSION
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/powerup_model.dart';
@@ -123,10 +123,16 @@ class PowerupBar extends StatelessWidget {
   }
 
   void _usePowerup(BuildContext context, PowerupType type, PowerupProvider powerupProvider) {
-    // Find the first available powerup of this type
-    final powerup = powerupProvider.playerPowerups
-        .where((p) => p.type == type && !p.isUsed)
-        .firstOrNull;
+    // 🔥 FIXED: Find the first available powerup of this type without using firstOrNull
+    PlayerPowerup? powerup;
+    try {
+      powerup = powerupProvider.playerPowerups
+          .where((p) => p.type == type && !p.isUsed)
+          .first;
+    } catch (e) {
+      // No powerup of this type available
+      return;
+    }
 
     if (powerup != null) {
       // Show confirmation for certain powerups
@@ -134,7 +140,7 @@ class PowerupBar extends StatelessWidget {
           type == PowerupType.showSolution ||
           type == PowerupType.bomb) {
         _showUsePowerupDialog(context, type, () {
-          powerupProvider.usePowerup(powerup.id, type);
+          powerupProvider.usePowerup(powerup!.id, type);
         });
       } else {
         // Use immediately for other powerups
@@ -253,13 +259,5 @@ class PowerupBar extends StatelessWidget {
       case PowerupType.bomb:
         return 'Clears a 3x3 area of opponent\'s completed cells';
     }
-  }
-}
-
-// Extension to handle null safety for firstOrNull
-extension IterableExtension<T> on Iterable<T> {
-  T? get firstOrNull {
-    if (isEmpty) return null;
-    return first;
   }
 }

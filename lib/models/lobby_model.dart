@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum LobbyStatus { waiting, starting, inProgress, completed }
-enum GameMode { classic, powerup, tournament }
+enum GameMode { classic, powerup, coop }
 
 class Player {
   final String id;
@@ -169,8 +169,8 @@ class Lobby {
         return GameMode.classic;
       case 'powerup':
         return GameMode.powerup;
-      case 'tournament':
-        return GameMode.tournament;
+      case 'co-op':
+        return GameMode.coop;
       default:
         return GameMode.classic;
     }

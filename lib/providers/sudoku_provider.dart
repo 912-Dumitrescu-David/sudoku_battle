@@ -59,12 +59,68 @@ class SudokuProvider extends ChangeNotifier {
   // 🔥 NEW: Getter to check if powerups are enabled
   bool get isPowerupModeEnabled => _isPowerupMode;
 
-  // Initialize powerup provider
   void initializePowerups(PowerupProvider powerupProvider) {
     _powerupProvider = powerupProvider;
-    _isPowerupMode = true; // 🔥 Enable powerup mode
-    print('🔮 SudokuProvider: Powerups initialized and enabled');
+    _isPowerupMode = true;
+
+    // 🔥 CRITICAL FIX: Set up callback to handle position updates
+    _powerupProvider!.setSudokuProviderCallback((effectType) {
+      print('🔗 SudokuProvider received effect: $effectType');
+
+      if (effectType == 'updatePowerupPositions') {
+        // 🎯 AUTO-CALCULATE positions when new powerups spawn
+        _powerupProvider!.updatePositionsWithCurrentBoard(_board, _givenCells);
+      } else {
+        // Handle other powerup effects
+        _handlePowerupEffect(effectType);
+      }
+    });
+
+    print('🔮 SudokuProvider: Powerups initialized with position callback');
   }
+
+  void _handlePowerupEffect(String effectType) {
+    switch (effectType) {
+      case 'updatePowerupPositions':
+      // 🎯 AUTO-CALCULATE positions when new powerups spawn
+        _powerupProvider!.updatePositionsWithCurrentBoard(_board, _givenCells);
+
+        // 🔥 CRITICAL: Force UI update after position calculation
+        notifyListeners();
+        break;
+
+      case 'forceUIUpdate':
+      // 🔥 NEW: Force UI update
+        print('🔄 Forcing SudokuProvider UI update');
+        notifyListeners();
+        break;
+
+      case 'revealTwoCells':
+        applyRevealCellPowerup();
+        break;
+      case 'extraHints':
+        applyExtraHintsPowerup();
+        break;
+      case 'clearMistakes':
+        applyClearErrorsPowerup();
+        break;
+      case 'timeBonus':
+        applyTimeBonusPowerup();
+        break;
+      default:
+        print('🔄 Unknown powerup effect: $effectType');
+    }
+  }
+
+  // 🔥 ADDITIONAL: Add a method to manually force powerup position updates
+  void forceUpdatePowerupPositions() {
+    if (_isPowerupMode && _powerupProvider != null) {
+      print('🔄 Manually forcing powerup position update');
+      _powerupProvider!.updatePositionsWithCurrentBoard(_board, _givenCells);
+      notifyListeners();
+    }
+  }
+
 
   /// Generate a new puzzle using our custom SudokuEngine
   void generatePuzzle({
@@ -185,14 +241,14 @@ class SudokuProvider extends ChangeNotifier {
     }
   }
 
-  /// Handle user number input with validation and powerup integration
+  //// Handle user number input with validation and powerup integration
   void handleNumberInput(int number) {
     if (_selectedRow == null || _selectedCol == null) return;
     int row = _selectedRow!;
     int col = _selectedCol!;
 
     if (!_givenCells[row][col]) {
-      // 🔥 ONLY check freeze if powerups are enabled
+      // Only check freeze if powerups are enabled
       if (_isPowerupMode && _powerupProvider?.isFrozen == true) {
         print('❄️ Player is frozen, cannot input numbers');
         return;
@@ -234,13 +290,25 @@ class SudokuProvider extends ChangeNotifier {
         }
       }
 
+      // 🔥 NEW: Update powerup positions after any board change (if powerups enabled)
+      if (_isPowerupMode && _powerupProvider != null) {
+        _powerupProvider!.updatePowerupPositions(_board, _givenCells);
+      }
+
       notifyListeners();
+    }
+  }
+
+  /// 🔥 NEW: Update powerup positions whenever the board changes
+  void _updatePowerupPositions() {
+    if (_isPowerupMode && _powerupProvider != null) {
+      _powerupProvider!.updatePowerupPositions(_board, _givenCells);
     }
   }
 
   // POWERUP APPLICATION METHODS
 
-  /// Apply reveal cell powerup - 🔥 FIXED VERSION
+  /// Apply reveal cell powerup - 🔥 UPDATED VERSION
   void applyRevealCellPowerup() {
     print('🔍 Applying reveal cell powerup');
 
@@ -275,6 +343,9 @@ class SudokuProvider extends ChangeNotifier {
         print('🔍 Revealed cell at ($row, $col) = ${_solution[row][col]}');
       }
 
+      // 🔥 NEW: Update powerup positions after revealing cells
+      _updatePowerupPositions();
+
       // Update UI
       notifyListeners();
       print('✅ Revealed $cellsToReveal cells');
@@ -290,7 +361,6 @@ class SudokuProvider extends ChangeNotifier {
     print('💡 Added 2 extra hints. Total: $_hintsRemaining');
   }
 
-  /// Apply clear errors powerup - 🔥 FIXED VERSION
   void applyClearErrorsPowerup() {
     int errorsCleared = 0;
     for (int i = 0; i < 9; i++) {
@@ -306,10 +376,12 @@ class SudokuProvider extends ChangeNotifier {
     // Reset mistake count
     _mistakesCount = 0;
 
-    notifyListeners(); // 🔥 FIXED: Added notifyListeners
+    // 🔥 NEW: Update powerup positions after clearing errors
+    _updatePowerupPositions();
+
+    notifyListeners();
     print('🧹 Cleared $errorsCleared errors and reset mistake count');
   }
-
   /// Apply time bonus powerup - 🔥 FIXED VERSION
   void applyTimeBonusPowerup() {
     _bonusTimeAdded += 60; // Add 60 seconds
@@ -358,6 +430,9 @@ class SudokuProvider extends ChangeNotifier {
 
     // Decrease hints remaining
     _hintsRemaining--;
+
+    // 🔥 NEW: Update powerup positions after hint usage
+    _updatePowerupPositions();
 
     notifyListeners();
   }

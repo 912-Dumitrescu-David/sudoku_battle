@@ -1,3 +1,4 @@
+// services/lobby_service.dart - UPDATED VERSION (Powerup integration)
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -5,19 +6,20 @@ import 'package:firebase_core/firebase_core.dart';
 import '../models/lobby_model.dart';
 import '../utils/sudoku_engine.dart';
 import '../services/game_state_service.dart';
+import '../services/powerup_service.dart'; // 🔥 NEW: Import powerup service
 
 class LobbyService {
-  // 🎯 Use your custom "lobbies" database instead of default
+  // Use your custom "lobbies" database instead of default
   static final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
     app: Firebase.app(),
-    databaseId: 'lobbies', // Your custom database name
+    databaseId: 'lobbies',
   );
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // 🏷️ COLLECTION NAMES DEFINED HERE
-  static const String _lobbiesCollection = 'lobbies';        // ← Lobbies collection
-  static const String _usersCollection = 'users';            // ← Users collection
-  static const String _gameResultsCollection = 'gameResults'; // ← Game results collection
+  // Collection names defined here
+  static const String _lobbiesCollection = 'lobbies';
+  static const String _usersCollection = 'users';
+  static const String _gameResultsCollection = 'gameResults';
 
   // Create a new lobby with puzzle generated immediately
   static Future<String> createLobby(LobbyCreationRequest request) async {
@@ -28,7 +30,7 @@ class LobbyService {
       // Get user data
       final userData = await getUserData(user.uid);
 
-      // 🎯 Generate puzzle immediately when creating lobby
+      // Generate puzzle immediately when creating lobby
       print('🎲 Generating puzzle for difficulty: ${request.gameSettings.difficulty}');
       final sharedPuzzle = _generateSharedPuzzle(request.gameSettings.difficulty);
       print('✅ Puzzle generated with ID: ${sharedPuzzle['id']}');
@@ -60,7 +62,7 @@ class LobbyService {
         'startedAt': null,
         'gameSessionId': null,
         'gameServerEndpoint': null,
-        'sharedPuzzle': sharedPuzzle, // 🎯 Add puzzle here at creation time
+        'sharedPuzzle': sharedPuzzle,
       };
 
       print('Creating lobby with shared puzzle');
@@ -69,8 +71,17 @@ class LobbyService {
           .collection(_lobbiesCollection)
           .add(lobbyData);
 
-      print('Lobby created successfully with ID: ${docRef.id}');
-      return docRef.id;
+      final lobbyId = docRef.id;
+
+      // 🔥 NEW: Initialize powerups if this is a powerup game mode
+      if (request.gameMode == GameMode.powerup) {
+        print('🔮 Initializing powerup system for powerup lobby: $lobbyId');
+        await PowerupService.initializePowerups(lobbyId);
+        print('✅ Powerup system initialized');
+      }
+
+      print('Lobby created successfully with ID: $lobbyId');
+      return lobbyId;
 
     } catch (e) {
       print('Error creating lobby: $e');
@@ -331,6 +342,9 @@ class LobbyService {
         batch.delete(doc.reference);
       }
 
+      // 🔥 NEW: Clean up powerup data
+      await PowerupService.clearLobbyPowerups(lobbyId);
+
       await batch.commit();
       print('🧹 Cleaned up all data for lobby: $lobbyId');
     } catch (e) {
@@ -403,11 +417,6 @@ class LobbyService {
 
         final lobbyRef = _firestore.collection(_lobbiesCollection).doc(lobbyId);
         final lobbyDoc = await transaction.get(lobbyRef);
-
-        if (!lobbyDoc.exists) {
-          print('❌ Lobby document not found');
-          throw Exception('Lobby not found');
-        }
 
         print('✅ Lobby document found');
         final lobby = Lobby.fromFirestore(lobbyDoc);

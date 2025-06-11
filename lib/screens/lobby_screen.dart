@@ -374,8 +374,8 @@ class _LobbyScreenState extends State<LobbyScreen> {
         return 'Classic';
       case GameMode.powerup:
         return 'Power-Up';
-      case GameMode.tournament:
-        return 'Tournament';
+      case GameMode.coop:
+        return 'Co-op';
     }
   }
 }
