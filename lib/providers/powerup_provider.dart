@@ -1,68 +1,62 @@
-// providers/powerup_provider.dart - UPDATED VERSION (Local positioning)
+// providers/powerup_provider.dart - STABILIZED VERSION
+
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:collection/collection.dart'; // 🔥 IMPORT for deep equality check
 import '../models/powerup_model.dart';
 import '../services/powerup_service.dart';
 
 class PowerupProvider extends ChangeNotifier {
-  List<PowerupSpawn> _powerupSpawns = [];
-  List<PlayerPowerup> _playerPowerups = [];
-  List<PowerupEffect> _activeEffects = [];
+  // 🔥 STATE CHANGE: Use a Map for efficient and stable state
+  Map<String, PowerupSpawn> _powerupSpawns = {};
+  Map<String, PlayerPowerup> _playerPowerups = {};
+  Map<String, PowerupEffect> _activeEffects = {};
 
   bool _isInitialized = false;
   String? _currentLobbyId;
   String? _currentPlayerId;
 
-  // 🔥 NEW: Local powerup positioning
-  Map<String, Map<String, int>> _localPowerupPositions = {}; // powerupId -> {row, col}
+  Map<String, Map<String, int>> _localPowerupPositions = {};
 
-  // Game timing for powerup spawning
   int _gameStartTime = 0;
   Timer? _spawnCheckTimer;
 
-  // Subscriptions
   StreamSubscription? _spawnsSubscription;
   StreamSubscription? _powerupsSubscription;
   StreamSubscription? _effectsSubscription;
 
-  // Cleanup timer
   Timer? _cleanupTimer;
 
-  // Getters
-  List<PowerupSpawn> get powerupSpawns => _powerupSpawns;
-  List<PlayerPowerup> get playerPowerups => _playerPowerups;
-  List<PowerupEffect> get activeEffects => _activeEffects;
+  // 🔥 GETTERS UPDATED: Getters now read from the maps
+  List<PowerupSpawn> get powerupSpawns => _powerupSpawns.values.toList();
+  List<PlayerPowerup> get playerPowerups => _playerPowerups.values.toList();
+  List<PowerupEffect> get activeEffects => _activeEffects.values.toList();
   bool get isInitialized => _isInitialized;
 
-  // Check if player is frozen
   bool get isFrozen {
-    return _activeEffects.any((effect) =>
+    return _activeEffects.values.any((effect) =>
     effect.type == PowerupType.freezeOpponent &&
         effect.isActive &&
         !effect.isExpired);
   }
 
-  // Check if solution should be shown
   bool get shouldShowSolution {
-    return _activeEffects.any((effect) =>
+    return _activeEffects.values.any((effect) =>
     effect.type == PowerupType.showSolution &&
         effect.isActive &&
         !effect.isExpired);
   }
 
-  // Check if bomb effect is active
   bool get hasBombEffect {
-    return _activeEffects.any((effect) =>
-    effect.type == PowerupType.bomb &&
-        effect.isActive);
+    return _activeEffects.values.any((effect) =>
+    effect.type == PowerupType.bomb && effect.isActive);
   }
 
-  // Get bomb effect data
   Map<String, dynamic>? get bombEffectData {
     try {
-      final effect = _activeEffects.firstWhere(
+      final effect = _activeEffects.values.firstWhere(
             (effect) => effect.type == PowerupType.bomb && effect.isActive,
       );
       return effect.data;
@@ -71,20 +65,14 @@ class PowerupProvider extends ChangeNotifier {
     }
   }
 
-  // Check if player has shield
   bool get hasShield {
-    return _activeEffects.any((effect) =>
-    effect.type == PowerupType.shield &&
-        effect.isActive);
+    return _activeEffects.values.any((effect) =>
+    effect.type == PowerupType.shield && effect.isActive);
   }
 
-  /// Initialize powerup system for a lobby
   Future<void> initialize(String lobbyId) async {
     if (_currentLobbyId == lobbyId && _isInitialized) return;
 
-    print('🔮 Initializing PowerupProvider for lobby: $lobbyId (local positioning)');
-
-    // Clean up previous subscriptions
     await dispose();
 
     _currentLobbyId = lobbyId;
@@ -93,180 +81,118 @@ class PowerupProvider extends ChangeNotifier {
     if (_currentPlayerId == null) return;
 
     try {
+      // 🔥 STABILIZED LISTENER LOGIC
       _spawnsSubscription = PowerupService.getPowerupSpawns(lobbyId).listen(
             (spawns) {
-          print('🔮 Powerup spawns updated: ${spawns.length} spawns');
-
-          // Check if we have new spawns
-          final newSpawns = spawns.where((spawn) =>
-          !_powerupSpawns.any((existing) => existing.id == spawn.id)
-          ).toList();
-
-          _powerupSpawns = spawns;
-
-          // 🔥 CRITICAL: If new spawns, trigger immediate position calculation
-          if (newSpawns.isNotEmpty && _sudokuProviderCallback != null) {
-            print('🎆 New spawns detected: ${newSpawns.length}');
-
-            // Small delay to ensure spawn data is fully processed
-            Future.delayed(Duration(milliseconds: 100), () {
-              _triggerPositionUpdate();
-            });
+          final newSpawnsMap = {for (var s in spawns) s.id: s};
+          if (!const MapEquality().equals(newSpawnsMap, _powerupSpawns)) {
+            final newSpawns = spawns.where((spawn) => !_powerupSpawns.containsKey(spawn.id)).toList();
+            _powerupSpawns = newSpawnsMap;
+            if (newSpawns.isNotEmpty && _sudokuProviderCallback != null) {
+              Future.delayed(const Duration(milliseconds: 100), () {
+                _triggerPositionUpdate();
+              });
+            }
+            notifyListeners();
           }
-
-          // 🔥 FORCE UI UPDATE
-          notifyListeners();
-        },
-        onError: (error) {
-          print('❌ Error listening to powerup spawns: $error');
         },
       );
 
-      // Subscribe to player powerups
       _powerupsSubscription = PowerupService.getPlayerPowerups(lobbyId, _currentPlayerId!).listen(
             (powerups) {
-          _playerPowerups = powerups;
-          notifyListeners();
-        },
-        onError: (error) {
-          print('❌ Error listening to player powerups: $error');
+          final newPowerupsMap = {for (var p in powerups) p.id: p};
+          if (!const MapEquality().equals(newPowerupsMap, _playerPowerups)) {
+            _playerPowerups = newPowerupsMap;
+            notifyListeners();
+          }
         },
       );
 
-      // Subscribe to active effects
       _effectsSubscription = PowerupService.getPowerupEffects(lobbyId, _currentPlayerId!).listen(
             (effects) {
-          _activeEffects = effects;
-          notifyListeners();
-        },
-        onError: (error) {
-          print('❌ Error listening to powerup effects: $error');
+          final newEffectsMap = {for (var e in effects) e.id: e};
+          if (!const MapEquality().equals(newEffectsMap, _activeEffects)) {
+            _activeEffects = newEffectsMap;
+            notifyListeners();
+          }
         },
       );
 
-      // Start cleanup timer
       _startCleanupTimer();
-
       _isInitialized = true;
-      print('✅ PowerupProvider initialized successfully (local positioning)');
+      print('✅ PowerupProvider initialized successfully (Stabilized)');
 
     } catch (e) {
       print('❌ Error initializing PowerupProvider: $e');
     }
   }
 
-  /// Start the game and begin powerup spawn checking
   void startGame() {
     if (!_isInitialized || _currentLobbyId == null) return;
-
     _gameStartTime = DateTime.now().millisecondsSinceEpoch;
-
-    // Start periodic checking for powerup spawns
     _startSpawnCheckTimer();
-
     print('🎮 Powerup system started - game time: 0s');
   }
 
-  /// Start timer to check for powerup spawns
   void _startSpawnCheckTimer() {
     _spawnCheckTimer?.cancel();
-
-    // Check every 5 seconds for new powerups to spawn
-    _spawnCheckTimer = Timer.periodic(Duration(seconds: 5), (timer) async {
+    _spawnCheckTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
       if (_currentLobbyId == null) {
         timer.cancel();
         return;
       }
-
-      final currentGameTime = _getCurrentGameTimeSeconds();
+      final currentGameTime = (DateTime.now().millisecondsSinceEpoch - _gameStartTime) ~/ 1000;
       await PowerupService.checkAndSpawnPowerups(_currentLobbyId!, currentGameTime);
     });
   }
 
-  /// Get current game time in seconds
-  int _getCurrentGameTimeSeconds() {
-    if (_gameStartTime == 0) return 0;
-    return (DateTime.now().millisecondsSinceEpoch - _gameStartTime) ~/ 1000;
-  }
-
-  /// 🔥 NEW: Calculate and cache powerup positions for current player
   void updatePowerupPositions(List<List<int?>> currentBoard, List<List<bool>> givenCells) {
     if (!_isInitialized) return;
-
-    // Calculate positions for all active powerups that aren't claimed yet
-    for (final spawn in _powerupSpawns) {
-      if (spawn.claimedBy == null) { // Only position unclaimed powerups
-        final location = PowerupService.calculatePlayerSpecificLocation(
-          spawn.id,
-          currentBoard,
-          givenCells,
-        );
-
+    for (final spawn in _powerupSpawns.values) {
+      if (spawn.claimedBy == null) {
+        final location = PowerupService.calculatePlayerSpecificLocation(spawn.id, currentBoard, givenCells);
         if (location != null) {
           _localPowerupPositions[spawn.id] = location;
         } else {
-          // Remove position if no empty cells available
           _localPowerupPositions.remove(spawn.id);
         }
       }
     }
-
     notifyListeners();
   }
 
-  /// 🔥 UPDATED: Attempt to claim a powerup using local position
   Future<bool> attemptClaimPowerup(int row, int col) async {
     if (!_isInitialized || _currentLobbyId == null) return false;
 
-    // Find powerup at this position for this player
     String? powerupIdAtPosition;
-
     for (final entry in _localPowerupPositions.entries) {
-      final powerupId = entry.key;
       final position = entry.value;
-
       if (position['row'] == row && position['col'] == col) {
-        // Check if this powerup still exists and isn't claimed
-        final spawn = _powerupSpawns.where((s) => s.id == powerupId && s.claimedBy == null).firstOrNull;
-        if (spawn != null) {
-          powerupIdAtPosition = powerupId;
+        if (_powerupSpawns.containsKey(entry.key) && _powerupSpawns[entry.key]?.claimedBy == null) {
+          powerupIdAtPosition = entry.key;
           break;
         }
       }
     }
 
-    if (powerupIdAtPosition == null) {
-      print('🔍 No claimable powerup found at ($row, $col)');
-      return false;
-    }
+    if (powerupIdAtPosition == null) return false;
 
-    print('🎯 Attempting to claim powerup $powerupIdAtPosition at ($row, $col)');
-
-    final success = await PowerupService.claimPowerup(
-      _currentLobbyId!,
-      powerupIdAtPosition,
-      row,
-      col,
-    );
-
+    final success = await PowerupService.claimPowerup(_currentLobbyId!, powerupIdAtPosition, row, col);
     if (success) {
-      final powerupType = _powerupSpawns
-          .where((s) => s.id == powerupIdAtPosition)
-          .firstOrNull?.type;
-
-      if (powerupType != null) {
-        print('✨ Successfully claimed ${_getDisplayNameForPowerupType(powerupType)}!');
-        _showPowerupClaimedNotification(powerupType);
-      }
-
-      // Remove from local positions since it's claimed
       _localPowerupPositions.remove(powerupIdAtPosition);
     }
-
     return success;
   }
 
-  /// Use a powerup - same as before
+  Future<void> markBombEffectAsHandled(String effectId) async {
+    if (_currentLobbyId == null) return;
+    print('✅ Marking bomb effect $effectId as handled.');
+    await PowerupService.markBombEffectInactive(_currentLobbyId!, effectId);
+  }
+
+  // No changes to usePowerup, _apply...Effect methods, callbacks, getPowerupAt, etc.
+  // ... (All other methods remain the same)
+
   Future<bool> usePowerup(String powerupId, PowerupType type) async {
     if (!_isInitialized || _currentLobbyId == null) return false;
 
@@ -370,7 +296,7 @@ class PowerupProvider extends ChangeNotifier {
 
     // Handle bomb effects - mark them as processed so UI can clear them
     if (hasBombEffect) {
-      final effects = _activeEffects.where((e) => e.type == PowerupType.bomb && e.isActive);
+      final effects = _activeEffects.values.where((e) => e.type == PowerupType.bomb && e.isActive);
       for (final effect in effects) {
         // Mark bomb effect as inactive after it's been applied
         await PowerupService.markBombEffectInactive(_currentLobbyId!, effect.id);
@@ -389,7 +315,7 @@ class PowerupProvider extends ChangeNotifier {
         if (position['row'] == row && position['col'] == col) {
           // Find the corresponding spawn
           try {
-            return _powerupSpawns.where((spawn) =>
+            return _powerupSpawns.values.where((spawn) =>
             spawn.id == powerupId && spawn.claimedBy == null
             ).first;
           } catch (e) {
@@ -489,7 +415,7 @@ class PowerupProvider extends ChangeNotifier {
 
   /// Get freeze time remaining
   int get freezeTimeRemaining {
-    final freezeEffect = _activeEffects.firstWhere(
+    final freezeEffect = _activeEffects.values.firstWhere(
           (effect) => effect.type == PowerupType.freezeOpponent &&
           effect.isActive &&
           !effect.isExpired,
@@ -510,7 +436,7 @@ class PowerupProvider extends ChangeNotifier {
 
   /// Get solution show time remaining
   int get solutionShowTimeRemaining {
-    final solutionEffect = _activeEffects.firstWhere(
+    final solutionEffect = _activeEffects.values.firstWhere(
           (effect) => effect.type == PowerupType.showSolution &&
           effect.isActive &&
           !effect.isExpired,
@@ -533,21 +459,17 @@ class PowerupProvider extends ChangeNotifier {
     print('🎯 Updating powerup positions with current board state');
     updatePowerupPositions(board, givenCells);
 
-    // Log the calculated positions for debugging
     print('📍 Calculated positions:');
-    for (final entry in _localPowerupPositions.entries) {
+    _localPowerupPositions.entries.forEach((entry) {
       final powerupId = entry.key;
       final position = entry.value;
-      final spawn = _powerupSpawns.where((s) => s.id == powerupId).firstOrNull;
+      final spawn = _powerupSpawns[powerupId];
       if (spawn != null) {
         print('   ${spawn.type} -> (${position['row']}, ${position['col']})');
       }
-    }
+    });
 
-    // 🔥 CRITICAL: Force UI update by notifying listeners
     notifyListeners();
-
-    // 🔥 ADDITIONAL: Trigger SudokuProvider update too
     _triggerSudokuProviderUpdate();
   }
 
@@ -556,7 +478,6 @@ class PowerupProvider extends ChangeNotifier {
     _sudokuProviderCallback?.call('updatePowerupPositions');
   }
 
-  // 🔥 NEW: Method to force SudokuProvider to update
   void _triggerSudokuProviderUpdate() {
     if (_sudokuProviderCallback != null) {
       print('🔄 Forcing SudokuProvider UI update');
@@ -578,7 +499,7 @@ class PowerupProvider extends ChangeNotifier {
     _powerupSpawns.clear();
     _playerPowerups.clear();
     _activeEffects.clear();
-    _localPowerupPositions.clear(); // 🔥 NEW: Clear local positions
+    _localPowerupPositions.clear();
 
     _isInitialized = false;
     _currentLobbyId = null;
@@ -588,8 +509,4 @@ class PowerupProvider extends ChangeNotifier {
 
     super.dispose();
   }
-
-
-
-
 }

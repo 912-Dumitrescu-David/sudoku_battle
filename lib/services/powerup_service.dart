@@ -20,7 +20,7 @@ class PowerupService {
   static const String _powerupEffectsCollection = 'powerupEffects';
 
   // Pre-generated powerup configuration
-  static const int TOTAL_POWERUPS_PER_GAME = 8;
+  static const int TOTAL_POWERUPS_PER_GAME = 20;
   static const int MIN_SPAWN_INTERVAL_SECONDS = 45;
   static const int MAX_SPAWN_INTERVAL_SECONDS = 90;
 

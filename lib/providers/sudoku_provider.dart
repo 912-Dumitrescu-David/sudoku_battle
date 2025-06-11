@@ -291,9 +291,9 @@ class SudokuProvider extends ChangeNotifier {
       }
 
       // 🔥 NEW: Update powerup positions after any board change (if powerups enabled)
-      if (_isPowerupMode && _powerupProvider != null) {
-        _powerupProvider!.updatePowerupPositions(_board, _givenCells);
-      }
+      // if (_isPowerupMode && _powerupProvider != null) {
+      //   _powerupProvider!.updatePowerupPositions(_board, _givenCells);
+      // }
 
       notifyListeners();
     }
@@ -307,6 +307,51 @@ class SudokuProvider extends ChangeNotifier {
   }
 
   // POWERUP APPLICATION METHODS
+
+  // providers/sudoku_provider.dart
+
+  /// 🔥 NEW: Apply bomb effect to the board
+  int applyBombEffect(Map<String, dynamic> bombData) {
+    if (bombData['startRow'] == null || bombData['startCol'] == null) {
+      return 0;
+    }
+
+    final int startRow = bombData['startRow'];
+    final int startCol = bombData['startCol'];
+    int cellsCleared = 0;
+
+    print('💣 Applying bomb effect at ($startRow, $startCol)');
+
+    for (int i = 0; i < 3; i++) {
+      for (int j = 0; j < 3; j++) {
+        final row = startRow + i;
+        final col = startCol + j;
+
+        if (row < 9 && col < 9) {
+          // Only clear non-given cells that the user has filled
+          if (!_givenCells[row][col] && _board[row][col] != null) {
+
+            // If the cell was correctly solved, decrement solved count
+            if (_board[row][col] == _solution[row][col]) {
+              solvedCells--;
+            }
+
+            // Clear the cell
+            _board[row][col] = null;
+            _errorCells[row][col] = false;
+            cellsCleared++;
+          }
+        }
+      }
+    }
+
+    if (cellsCleared > 0) {
+      print('💣 Cleared $cellsCleared cells.');
+      notifyListeners();
+    }
+
+    return cellsCleared;
+  }
 
   /// Apply reveal cell powerup - 🔥 UPDATED VERSION
   void applyRevealCellPowerup() {
@@ -344,7 +389,7 @@ class SudokuProvider extends ChangeNotifier {
       }
 
       // 🔥 NEW: Update powerup positions after revealing cells
-      _updatePowerupPositions();
+      //_updatePowerupPositions();
 
       // Update UI
       notifyListeners();
@@ -377,7 +422,7 @@ class SudokuProvider extends ChangeNotifier {
     _mistakesCount = 0;
 
     // 🔥 NEW: Update powerup positions after clearing errors
-    _updatePowerupPositions();
+    //_updatePowerupPositions();
 
     notifyListeners();
     print('🧹 Cleared $errorsCleared errors and reset mistake count');
@@ -432,7 +477,7 @@ class SudokuProvider extends ChangeNotifier {
     _hintsRemaining--;
 
     // 🔥 NEW: Update powerup positions after hint usage
-    _updatePowerupPositions();
+    //_updatePowerupPositions();
 
     notifyListeners();
   }
