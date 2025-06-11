@@ -1,4 +1,4 @@
-// screens/multiplayer_sudoku_screen.dart - (No changes from previous version, provided for completeness)
+// screens/multiplayer_sudoku_screen.dart
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -8,8 +8,10 @@ import 'package:collection/collection.dart';
 import '../models/powerup_model.dart';
 import '../providers/sudoku_provider.dart';
 import '../providers/powerup_provider.dart';
+import '../providers/lobby_provider.dart';
 import '../providers/theme_provider.dart';
 import '../models/lobby_model.dart';
+import '../services/lobby_service.dart';
 import '../widgets/sudoku_board.dart';
 import '../widgets/number_keypad.dart';
 import '../widgets/mistake_counter.dart';
@@ -54,6 +56,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
 
   Map<String, PlayerGameState> _opponentStates = {};
   StreamSubscription? _gameStatesSubscription;
+  StreamSubscription? _coOpMovesSubscription;
 
   @override
   void initState() {
@@ -68,8 +71,13 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     _initializeOpponentStates();
     _listenToGameStates();
 
+    // The listener setup is moved to addPostFrameCallback to be safer
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeGame();
+      // Set up listener for co-op moves after the first frame is built
+      if (widget.lobby.gameMode == GameMode.coop) {
+        _listenForCoOpMoves();
+      }
     });
   }
 
@@ -105,9 +113,31 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     });
   }
 
+  void _listenForCoOpMoves() {
+    print("DEBUG: Setting up co-op move listener for lobby ${widget.lobby.id}");
+    final sudokuProvider = context.read<SudokuProvider>();
+    final localPlayerId = FirebaseAuth.instance.currentUser?.uid;
+
+    _coOpMovesSubscription = LobbyService.getCoOpMoves(widget.lobby.id).listen((moveData) {
+      print("DEBUG: Received move data: $moveData");
+      if (moveData['playerId'] != null && moveData['playerId'] != localPlayerId) {
+        print("DEBUG: Applying move from opponent ${moveData['playerId']}");
+        sudokuProvider.applyMove(
+          moveData['row'],
+          moveData['col'],
+          moveData['number'],
+          moveData['playerId'],
+        );
+      }
+    });
+  }
+
   void _initializeGame() {
     final sudokuProvider = Provider.of<SudokuProvider>(context, listen: false);
     final powerupProvider = Provider.of<PowerupProvider>(context, listen: false);
+
+    // Set the lobbyId in the provider so it can send moves
+    sudokuProvider.setLobbyId(widget.lobby.id);
 
     final screenWidth = MediaQuery.of(context).size.width;
     setState(() {
@@ -173,6 +203,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     _stopwatch.stop();
     _timer.cancel();
     _gameStatesSubscription?.cancel();
+    _coOpMovesSubscription?.cancel();
     Provider.of<PowerupProvider>(context, listen: false).dispose();
     super.dispose();
   }
@@ -187,22 +218,26 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Watch the LobbyProvider to get real-time lobby data (for hints)
+    final currentLobby = context.watch<LobbyProvider>().currentLobby;
+
     return Consumer2<SudokuProvider, PowerupProvider>(
       builder: (context, sudokuProvider, powerupProvider, child) {
 
-        if (widget.lobby.gameMode == GameMode.powerup) {
-          final bombEffect = powerupProvider.activeEffects.firstWhereOrNull(
-                (e) => e.type == PowerupType.bomb && e.isActive,
-          );
+        if (sudokuProvider.isGameOver && !_gameEnded) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (widget.lobby.gameMode == GameMode.coop) {
+              _handleCoOpGameEnd(sudokuProvider.isGameWon ?? false, sudokuProvider);
+            } else {
+              _handleGameEnd(sudokuProvider.isGameWon ?? false, sudokuProvider);
+            }
+          });
+        }
 
-          if (bombEffect != null && !_processedEffectIds.contains(bombEffect.id)) {
-            _processedEffectIds.add(bombEffect.id);
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                _handleNewBombEffect(bombEffect);
-              }
-            });
-          }
+        // Update the provider with the latest shared hint count in co-op mode
+        if (widget.lobby.gameMode == GameMode.coop && currentLobby != null) {
+          sudokuProvider.updateSharedHints(currentLobby.sharedHintCount);
+          sudokuProvider.updateSharedMistakes(currentLobby.sharedMistakeCount);
         }
 
         if (!_gameStarted) {
@@ -212,7 +247,9 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
         return Scaffold(
           appBar: AppBar(
             title: Text('${widget.lobby.gameMode.name.toUpperCase()} Sudoku - ${widget.lobby.gameSettings.difficulty.toUpperCase()}'),
-            backgroundColor: widget.lobby.gameMode == GameMode.powerup ? Colors.purple : Theme.of(context).primaryColor,
+            backgroundColor: widget.lobby.gameMode == GameMode.powerup
+                ? Colors.purple
+                : (widget.lobby.gameMode == GameMode.coop ? Colors.teal : Theme.of(context).primaryColor),
             foregroundColor: Colors.white,
             actions: [
               if (widget.lobby.gameMode == GameMode.powerup)
@@ -225,16 +262,19 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
               LayoutBuilder(
                 builder: (context, constraints) {
                   final isWeb = kIsWeb;
-                  final screenHeight = constraints.maxHeight;
                   final progressHeight = 80.0;
                   final statsHeight = 60.0;
                   final powerupBarHeight = widget.lobby.gameMode == GameMode.powerup ? (isWeb ? 100.0 : 80.0) : 0.0;
                   final keypadHeight = isWeb ? 120.0 : 100.0;
-                  final availableHeightForBoard = screenHeight - progressHeight - statsHeight - powerupBarHeight - keypadHeight - (AppBar().preferredSize.height) - MediaQuery.of(context).padding.top;
 
                   return Column(
                     children: [
-                      SizedBox(height: progressHeight, child: Column(children: [_buildOpponentProgress(), _buildMyProgress(sudokuProvider.progress)])),
+                      // Conditionally render the progress bar based on game mode
+                      if (widget.lobby.gameMode == GameMode.coop)
+                        _buildSharedProgress(sudokuProvider)
+                      else
+                        SizedBox(height: progressHeight, child: Column(children: [_buildOpponentProgress(), _buildMyProgress(sudokuProvider.progress)])),
+
                       Container(
                         height: statsHeight,
                         padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -253,8 +293,8 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
                       Expanded(
                         child: Stack(
                           children: [
-                            Padding(
-                              padding: const EdgeInsets.all(8.0),
+                            const Padding(
+                              padding: EdgeInsets.all(8.0),
                               child: SudokuBoard(),
                             ),
                             if (_activeBombEffect != null && !_isBombExploding)
@@ -302,12 +342,51 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
   void _checkEndGameConditions(SudokuProvider sudokuProvider) {
     if (_gameEnded) return;
 
-    if ((sudokuProvider.maxMistakes > 0) && (sudokuProvider.mistakesCount >= sudokuProvider.maxMistakes)) {
-      Future.microtask(() => _handleGameEnd(false, sudokuProvider));
-    } else if (sudokuProvider.isSolved) {
-      Future.microtask(() => _handleGameEnd(true, sudokuProvider));
-    } else if (_timeUp) {
-      Future.microtask(() => _handleGameEnd(false, sudokuProvider, timeUp: true));
+    bool isOver = false;
+    bool isWin = false;
+
+    if (sudokuProvider.isSolved) {
+      isOver = true;
+      isWin = true;
+    } else if (_timeUp || (sudokuProvider.maxMistakes > 0 && sudokuProvider.mistakesCount >= sudokuProvider.maxMistakes)) {
+      isOver = true;
+      isWin = false;
+    }
+
+    if (isOver) {
+      // NEW: Route to the correct game-end handler
+      if (widget.lobby.gameMode == GameMode.coop) {
+        Future.microtask(() => _handleCoOpGameEnd(isWin, sudokuProvider));
+      } else {
+        // The original handler for competitive modes
+        Future.microtask(() => _handleGameEnd(isWin, sudokuProvider));
+      }
+    }
+  }
+
+  Future<void> _handleCoOpGameEnd(bool isWin, SudokuProvider provider) async {
+    if (_gameEnded) return;
+    _stopGame();
+
+    // 1. Get the solve counts for each player from the provider.
+    final playerSolveCounts = provider.getPlayerSolveCounts();
+
+    // 2. Navigate to the result screen with the new co-op data.
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MultiplayerResultScreen(
+            isWin: isWin,
+            time: _formattedTime,
+            solvedBlocks: provider.solved,
+            totalToSolve: _calculateTotalToSolve(),
+            lobby: widget.lobby,
+            // Pass the new co-op specific data
+            playerSolveCounts: playerSolveCounts,
+          ),
+        ),
+      );
     }
   }
 
@@ -328,6 +407,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => MultiplayerResultScreen(isWin: isWin, time: _formattedTime, solvedBlocks: provider.solved, totalToSolve: _calculateTotalToSolve(), lobby: widget.lobby, winnerName: gameResult['winnerName'], isOpponentStillPlaying: opponentStillPlaying, isFirstPlace: gameResult['isFirstPlace'] ?? isWin)));
     }
   }
+
   void _showPowerupInfo() {
     showDialog(
       context: context,
@@ -365,6 +445,35 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     );
   }
 
+  Widget _buildSharedProgress(SudokuProvider sudokuProvider) {
+    final totalToSolve = _calculateTotalToSolve();
+    final progress = totalToSolve > 0 ? sudokuProvider.solved / totalToSolve : 0.0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Colors.teal.withOpacity(0.1),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            'Shared Progress',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal),
+          ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: progress,
+            minHeight: 10,
+            backgroundColor: Colors.grey[300],
+            valueColor: const AlwaysStoppedAnimation<Color>(Colors.teal),
+            borderRadius: BorderRadius.circular(5),
+          ),
+          const SizedBox(height: 4),
+          Text('${(progress * 100).toInt()}% Complete'),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMyProgress(double progress) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -392,17 +501,6 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     );
   }
 
-  void _updateMyProgress(SudokuProvider provider) {
-    GameStateService.updatePlayerGameStatus(
-      widget.lobby.id,
-      isCompleted: false,
-      completionTime: _formattedTime,
-      solvedCells: provider.solved,
-      totalCells: _calculateTotalToSolve(),
-      mistakes: provider.mistakesCount,
-    );
-  }
-
   Widget _buildWaitingScreen() {
     return Center(
       child: Column(
@@ -411,7 +509,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
           const CircularProgressIndicator(),
           const SizedBox(height: 20),
           Text(
-            '${widget.lobby.gameMode == GameMode.powerup ? "Powerup " : ""}Game Starting Soon...',
+            '${widget.lobby.gameMode.name.toUpperCase()} Game Starting Soon...',
             style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 10),

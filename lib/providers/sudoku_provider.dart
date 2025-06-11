@@ -1,6 +1,8 @@
 // providers/sudoku_provider.dart - FIXED VERSION
 import 'dart:math';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../services/lobby_service.dart';
 import '../utils/sudoku_engine.dart';
 import '../models/lobby_model.dart';
 import '../models/powerup_model.dart';
@@ -11,6 +13,10 @@ class SudokuProvider extends ChangeNotifier {
   late List<List<int>> _solution;
   late List<List<bool>> _givenCells;
   late List<List<bool>> _errorCells;
+
+  late List<List<String?>> _playerCellEntries;
+
+  String? _lobbyId;
 
   int? _selectedRow;
   int? _selectedCol;
@@ -40,21 +46,28 @@ class SudokuProvider extends ChangeNotifier {
   int _bonusTimeAdded = 0;
   int get bonusTimeAdded => _bonusTimeAdded;
 
+  bool isGameOver = false;
+  bool? isGameWon;
+
   SudokuProvider() {
     _board = List.generate(9, (_) => List.filled(9, null));
     _solution = List.generate(9, (_) => List.filled(9, 0));
     _givenCells = List.generate(9, (_) => List.filled(9, false));
     _errorCells = List.generate(9, (_) => List.filled(9, false));
+
+    _playerCellEntries = List.generate(9, (_) => List.filled(9, null));
   }
 
   List<List<int?>> get board => _board;
   List<List<int>> get solution => _solution;
   List<List<bool>> get givenCells => _givenCells;
   List<List<bool>> get errorCells => _errorCells;
+  List<List<String?>> get playerCellEntries => _playerCellEntries;
   int? get selectedRow => _selectedRow;
   int? get selectedCol => _selectedCol;
   int get mistakes => _mistakesCount;
   int get solved => solvedCells;
+  GameMode get currentGameMode => _currentGameMode;
 
   // 🔥 NEW: Getter to check if powerups are enabled
   bool get isPowerupModeEnabled => _isPowerupMode;
@@ -77,6 +90,10 @@ class SudokuProvider extends ChangeNotifier {
     });
 
     print('🔮 SudokuProvider: Powerups initialized with position callback');
+  }
+
+  void setLobbyId(String lobbyId) {
+    _lobbyId = lobbyId;
   }
 
   void _handlePowerupEffect(String effectType) {
@@ -175,6 +192,7 @@ class SudokuProvider extends ChangeNotifier {
 
     // Reset errors and mistakes
     _errorCells = List.generate(9, (_) => List.filled(9, false));
+    _playerCellEntries = List.generate(9, (_) => List.filled(9, null));
     _mistakesCount = 0;
     _selectedRow = null;
     _selectedCol = null;
@@ -197,7 +215,7 @@ class SudokuProvider extends ChangeNotifier {
     _gameSettings = gameSettings;
     _currentGameMode = gameMode;
     _isPowerupMode = gameMode == GameMode.powerup; // 🔥 Only enable powerups for powerup mode
-
+    _playerCellEntries = List.generate(9, (_) => List.filled(9, null));
     // Apply game settings
     if (gameSettings != null) {
       _maxMistakes = gameSettings.allowMistakes ? gameSettings.maxMistakes : 1;
@@ -222,6 +240,7 @@ class SudokuProvider extends ChangeNotifier {
 
     // Reset state
     _errorCells = List.generate(9, (_) => List.filled(9, false));
+    _playerCellEntries = List.generate(9, (_) => List.filled(9, null));
     _mistakesCount = 0;
     _selectedRow = null;
     _selectedCol = null;
@@ -241,11 +260,12 @@ class SudokuProvider extends ChangeNotifier {
     }
   }
 
-  //// Handle user number input with validation and powerup integration
   void handleNumberInput(int number) {
     if (_selectedRow == null || _selectedCol == null) return;
     int row = _selectedRow!;
     int col = _selectedCol!;
+
+    final userId = FirebaseAuth.instance.currentUser?.uid;
 
     if (!_givenCells[row][col]) {
       // Only check freeze if powerups are enabled
@@ -276,10 +296,22 @@ class SudokuProvider extends ChangeNotifier {
           }
         }
       } else {
-        // Wrong input - only count as mistake if mistakes are enabled
+        // --- MODIFIED SECTION ---
+        // Wrong input - handle mistakes based on game mode
         if (_gameSettings?.allowMistakes ?? true) {
           _errorCells[row][col] = true;
-          _mistakesCount++;
+
+          // NEW LOGIC: Check the game mode to determine how to count the mistake
+          if (_currentGameMode == GameMode.coop) {
+            // For co-op, call the service to increment the shared counter in Firebase
+            if (_lobbyId != null) {
+              LobbyService.incrementSharedMistakes(_lobbyId!);
+            }
+          } else {
+            // For other modes (classic, powerup), increment the local counter
+            _mistakesCount++;
+          }
+
         } else {
           // If mistakes not allowed, still show error but don't increment counter
           _errorCells[row][col] = true;
@@ -290,19 +322,20 @@ class SudokuProvider extends ChangeNotifier {
         }
       }
 
-      // 🔥 NEW: Update powerup positions after any board change (if powerups enabled)
-      // if (_isPowerupMode && _powerupProvider != null) {
-      //   _powerupProvider!.updatePowerupPositions(_board, _givenCells);
-      // }
+      // --- CO-OP LOGIC (for sending moves) ---
+      // This section ensures the move is recorded and sent
+      if (_currentGameMode == GameMode.coop) {
+        // 1. Record which player made the move on the local device
+        _playerCellEntries[row][col] = userId;
+
+        // 2. Send the move to Firebase so your partner can see it.
+        if (_lobbyId != null) {
+          LobbyService.sendCoOpMove(_lobbyId!, row, col, number);
+        }
+      }
+      _internalCheckEndGameConditions();
 
       notifyListeners();
-    }
-  }
-
-  /// 🔥 NEW: Update powerup positions whenever the board changes
-  void _updatePowerupPositions() {
-    if (_isPowerupMode && _powerupProvider != null) {
-      _powerupProvider!.updatePowerupPositions(_board, _givenCells);
     }
   }
 
@@ -455,31 +488,36 @@ class SudokuProvider extends ChangeNotifier {
     final col = _selectedCol!;
     final correctNumber = _solution[row][col];
 
-    // Store previous value to check if it was already correct
-    int? previousValue = _board[row][col];
-    bool wasPreviousCorrect = previousValue != null && previousValue == correctNumber;
+    // This part correctly updates the hint counter for both players in co-op
+    if (_currentGameMode == GameMode.coop) {
+      if (_lobbyId != null) {
+        LobbyService.useSharedHint(_lobbyId!);
+      }
+    } else {
+      // Non-co-op modes decrement the local counter
+      _hintsRemaining--;
+    }
 
-    // Set the correct number
+    // --- FIX STARTS HERE ---
+    // This section now ensures the revealed number is shown to both players
+
+    // 1. Apply the hint to the local board state
     _board[row][col] = correctNumber;
     _errorCells[row][col] = false;
 
-    // Update solved cells count
-    if (!wasPreviousCorrect) {
-      solvedCells++;
+    // Check if the cell was previously empty/wrong and update solved count
+    // (This logic can be simplified or adjusted as needed for hints)
+    solvedCells++;
 
-      // 🔥 ONLY try to claim powerup if powerups are enabled
-      if (_isPowerupMode) {
-        _powerupProvider?.attemptClaimPowerup(row, col);
-      }
+    // 2. If in co-op mode, broadcast this hint as a move to the other player
+    if (_currentGameMode == GameMode.coop && _lobbyId != null) {
+      LobbyService.sendCoOpMove(_lobbyId!, row, col, correctNumber);
     }
 
-    // Decrease hints remaining
-    _hintsRemaining--;
-
-    // 🔥 NEW: Update powerup positions after hint usage
-    //_updatePowerupPositions();
-
+    // 3. Notify listeners to update the UI
     notifyListeners();
+
+    _internalCheckEndGameConditions();
   }
 
   /// Reset hints to default value
@@ -505,15 +543,29 @@ class SudokuProvider extends ChangeNotifier {
   /// Apply move from multiplayer (opponent's move)
   void applyMove(int row, int col, int number, String playerId) {
     if (!_givenCells[row][col]) {
-      _board[row][col] = number;
+      // Store previous state to correctly update solved count
+      int? previousValue = _board[row][col];
+      bool wasCorrect = previousValue != null && previousValue == _solution[row][col];
 
-      // Don't count as mistake for opponent moves, just apply
-      if (number == _solution[row][col]) {
-        _errorCells[row][col] = false;
+      _board[row][col] = number;
+      bool isNowCorrect = number == _solution[row][col];
+
+      // Update solved count based on the change
+      if (isNowCorrect && !wasCorrect) {
+        solvedCells++;
+      } else if (!isNowCorrect && wasCorrect) {
+        solvedCells--;
       }
 
+      if (_currentGameMode == GameMode.coop) {
+        _playerCellEntries[row][col] = playerId;
+      }
+
+      _errorCells[row][col] = !isNowCorrect;
       notifyListeners();
     }
+
+    _internalCheckEndGameConditions();
   }
 
   /// Calculate how many of each number (1-9) are left.
@@ -626,4 +678,55 @@ class SudokuProvider extends ChangeNotifier {
     if (!_isPowerupMode) return null; // 🔥 Return null if not in powerup mode
     return _powerupProvider?.getPowerupAt(row, col);
   }
+
+  void updateSharedHints(int? hintCount) {
+    if (_currentGameMode == GameMode.coop) {
+      if (_hintsRemaining != hintCount && hintCount != null) {
+        _hintsRemaining = hintCount;
+        notifyListeners();
+      }
+    }
+  }
+
+  void updateSharedMistakes(int? mistakeCount) {
+    if (_currentGameMode == GameMode.coop && _mistakesCount != mistakeCount && mistakeCount != null) {
+      _mistakesCount = mistakeCount;
+      notifyListeners();
+    }
+  }
+
+  // NEW: A method to count how many cells each player filled.
+  Map<String, int> getPlayerSolveCounts() {
+    final Map<String, int> counts = {};
+    if (_currentGameMode != GameMode.coop) {
+      return counts;
+    }
+
+    for (int i = 0; i < 9; i++) {
+      for (int j = 0; j < 9; j++) {
+        final playerId = _playerCellEntries[i][j];
+        if (playerId != null) {
+          counts[playerId] = (counts[playerId] ?? 0) + 1;
+        }
+      }
+    }
+    return counts;
+  }
+
+  void _internalCheckEndGameConditions() {
+    // Don't check again if the game is already over
+    if (isGameOver) return;
+    bool shouldNotify = false;
+
+    if (isSolved) {
+      isGameOver = true;
+      isGameWon = true;
+      shouldNotify = true;
+    } else if ((_gameSettings?.allowMistakes ?? true) && _mistakesCount >= maxMistakes) {
+      isGameOver = true;
+      isGameWon = false;
+      shouldNotify = true;
+    }
+  }
+
 }

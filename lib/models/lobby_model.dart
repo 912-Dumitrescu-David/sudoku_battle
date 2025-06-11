@@ -93,6 +93,8 @@ class Lobby {
   final String? gameServerEndpoint;
   final Map<String, dynamic>? sharedPuzzle; // Add shared puzzle
   final bool isRanked; // Add ranked flag
+  final int? sharedHintCount;
+  final int? sharedMistakeCount;
 
   Lobby({
     required this.id,
@@ -111,7 +113,9 @@ class Lobby {
     this.gameSessionId,
     this.gameServerEndpoint,
     this.sharedPuzzle, // Add to constructor
-    this.isRanked = false, // Add to constructor with default false
+    this.isRanked = false,
+    this.sharedHintCount,
+    this.sharedMistakeCount,
   });
 
   factory Lobby.fromFirestore(DocumentSnapshot doc) {
@@ -137,8 +141,10 @@ class Lobby {
           : null,
       gameSessionId: data['gameSessionId'],
       gameServerEndpoint: data['gameServerEndpoint'],
-      sharedPuzzle: data['sharedPuzzle'] as Map<String, dynamic>?, // Add this line
-      isRanked: data['isRanked'] ?? false, // 🔥 THIS WAS MISSING! Add this line
+      sharedPuzzle: data['sharedPuzzle'] as Map<String, dynamic>?,
+      isRanked: data['isRanked'] ?? false,
+      sharedHintCount: data['sharedHintCount'],
+      sharedMistakeCount: data['sharedMistakeCount'],
     );
   }
 
@@ -158,8 +164,10 @@ class Lobby {
       'startedAt': startedAt?.millisecondsSinceEpoch,
       'gameSessionId': gameSessionId,
       'gameServerEndpoint': gameServerEndpoint,
-      'sharedPuzzle': sharedPuzzle, // Add this line
-      'isRanked': isRanked, // 🔥 ALSO ADD THIS to toFirestore method
+      'sharedPuzzle': sharedPuzzle,
+      'isRanked': isRanked,
+      'sharedHintCount': sharedHintCount,
+      'sharedMistakeCount': sharedMistakeCount,
     };
   }
 
@@ -169,7 +177,7 @@ class Lobby {
         return GameMode.classic;
       case 'powerup':
         return GameMode.powerup;
-      case 'co-op':
+      case 'coop':
         return GameMode.coop;
       default:
         return GameMode.classic;
@@ -208,7 +216,7 @@ class Lobby {
     String? gameSessionId,
     String? gameServerEndpoint,
     Map<String, dynamic>? sharedPuzzle,
-    bool? isRanked, // 🔥 ADD THIS to copyWith
+    bool? isRanked,
   }) {
     return Lobby(
       id: id ?? this.id,
@@ -227,7 +235,7 @@ class Lobby {
       gameSessionId: gameSessionId ?? this.gameSessionId,
       gameServerEndpoint: gameServerEndpoint ?? this.gameServerEndpoint,
       sharedPuzzle: sharedPuzzle ?? this.sharedPuzzle,
-      isRanked: isRanked ?? this.isRanked, // 🔥 ADD THIS to copyWith
+      isRanked: isRanked ?? this.isRanked,
     );
   }
 }

@@ -1,4 +1,5 @@
 // services/lobby_service.dart - UPDATED VERSION (Powerup integration)
+import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -20,6 +21,7 @@ class LobbyService {
   static const String _lobbiesCollection = 'lobbies';
   static const String _usersCollection = 'users';
   static const String _gameResultsCollection = 'gameResults';
+  static const String _movesCollection = 'moves';
 
   // Create a new lobby with puzzle generated immediately
   static Future<String> createLobby(LobbyCreationRequest request) async {
@@ -65,6 +67,11 @@ class LobbyService {
         'sharedPuzzle': sharedPuzzle,
       };
 
+      if (request.gameMode == GameMode.coop) {
+        lobbyData['sharedHintCount'] = 6;
+        lobbyData['sharedMistakeCount'] = 0;
+      }
+
       print('Creating lobby with shared puzzle');
 
       final docRef = await _firestore
@@ -88,6 +95,26 @@ class LobbyService {
       rethrow;
     }
   }
+
+  // CO-OP: New method to decrement the shared hint count using a transaction
+  static Future<void> useSharedHint(String lobbyId) async {
+    final lobbyRef = _firestore.collection(_lobbiesCollection).doc(lobbyId);
+    try {
+      await _firestore.runTransaction((transaction) async {
+        final snapshot = await transaction.get(lobbyRef);
+        if (!snapshot.exists) {
+          throw Exception("Lobby does not exist!");
+        }
+        final currentHints = snapshot.data()?['sharedHintCount'] ?? 0;
+        if (currentHints > 0) {
+          transaction.update(lobbyRef, {'sharedHintCount': currentHints - 1});
+        }
+      });
+    } catch (e) {
+      print("Failed to use shared hint: $e");
+    }
+  }
+
 
   // Generate shared puzzle using SudokuEngine with proper Firestore serialization
   static Map<String, dynamic> _generateSharedPuzzle(String difficulty) {
@@ -563,7 +590,66 @@ class LobbyService {
         .map((doc) => Lobby.fromFirestore(doc))
         .toList());
   }
+
+
+  // CO-OP: Method to send a single move to Firebase.
+  static Future<void> sendCoOpMove(String lobbyId, int row, int col, int number) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      await _firestore
+          .collection(_lobbiesCollection)
+          .doc(lobbyId)
+          .collection(_movesCollection)
+          .add({
+        'playerId': user.uid,
+        'row': row,
+        'col': col,
+        'number': number,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error sending co-op move: $e');
+      // Handle error appropriately
+    }
+  }
+
+  // CO-OP: Method to get a stream of moves from Firebase.
+  static Stream<Map<String, dynamic>> getCoOpMoves(String lobbyId) {
+    return _firestore
+        .collection(_lobbiesCollection)
+        .doc(lobbyId)
+        .collection(_movesCollection)
+        .orderBy('timestamp', descending: false)
+        .snapshots()
+        .transform(StreamTransformer.fromHandlers(handleData: (snapshot, sink) {
+      for (var change in snapshot.docChanges) {
+        if (change.type == DocumentChangeType.added) {
+          sink.add(change.doc.data() as Map<String, dynamic>);
+        }
+      }
+    }));
+  }
+
+  // NEW: Method to increment the shared mistake count using a transaction
+  static Future<void> incrementSharedMistakes(String lobbyId) async {
+    final lobbyRef = _firestore.collection(_lobbiesCollection).doc(lobbyId);
+    try {
+      // Use a transaction to prevent race conditions
+      await _firestore.runTransaction((transaction) async {
+        final snapshot = await transaction.get(lobbyRef);
+        if (!snapshot.exists) throw Exception("Lobby does not exist!");
+        final currentMistakes = snapshot.data()?['sharedMistakeCount'] ?? 0;
+        transaction.update(lobbyRef, {'sharedMistakeCount': currentMistakes + 1});
+      });
+    } catch (e) {
+      print("Failed to increment shared mistakes: $e");
+    }
+  }
+
 }
+
 
 // Helper function to convert string to Difficulty enum
 Difficulty _stringToDifficulty(String difficulty) {
