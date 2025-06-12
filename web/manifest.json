@@ -1,6 +1,6 @@
 {
-    "name": "sudoku_battle",
-    "short_name": "sudoku_battle",
+    "name": "Sudoku Gladiators",
+    "short_name": "Sudoku Gladiators",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

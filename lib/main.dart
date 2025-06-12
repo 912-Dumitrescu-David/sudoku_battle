@@ -51,7 +51,7 @@ class SudokuBattleApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     return MaterialApp(
-      title: 'Sudoku Battle',
+      title: 'Sudoku Gladiators',
       theme: themeProvider.themeData,
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
