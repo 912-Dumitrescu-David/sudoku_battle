@@ -7,7 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
-
+import 'package:profanity_filter/profanity_filter.dart';
 import '../providers/theme_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -43,42 +43,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final username = _usernameController.text.trim();
       if (username.isEmpty) throw Exception("Username cannot be empty");
+      if (username.length < 3 || username.length > 15) {
+        throw Exception("Username must be between 3 and 15 characters.");
+      }
+
+      // 1. Client-Side Profanity Check
+      final filter = ProfanityFilter();
+      if (filter.hasProfanity(username)) {
+        throw Exception("This username is not allowed.");
+      }
 
       final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
 
-      // Check if username is unique
-      final available = await isUsernameAvailable(username);
-      if (!available) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Username already taken!')),
-        );
+      if (username == user.displayName) {
         setState(() => _isLoading = false);
         return;
       }
 
-      // Update Auth displayName
-      await user?.updateDisplayName(username);
-      await user?.reload();
+      final available = await isUsernameAvailable(username);
+      if (!available) {
+        throw Exception('Username already taken!');
+      }
 
-      // Save in Firestore
+      await user.updateDisplayName(username);
+
       await FirebaseFirestore.instance
           .collection('users')
-          .doc(user?.uid)
-          .set({
-        'username': username,
-        'email': user?.email,
-        'photoURL': user?.photoURL,
-      }, SetOptions(merge: true));
+          .doc(user.uid)
+          .update({'username': username});
 
-      setState(() {});
+      await user.reload();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Username updated successfully!')),
+      );
+
+      setState(() {
+        _profileChanged = true;
+      });
+
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update username')),
+        SnackBar(content: Text(e.toString().replaceFirst("Exception: ", ""))),
       );
     }
-    setState(() {
-      _profileChanged = true; // <--- Profile changed!
-    });
+
     setState(() => _isLoading = false);
   }
 

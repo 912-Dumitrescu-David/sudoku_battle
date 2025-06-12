@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:profanity_filter/profanity_filter.dart';
 
 
 class LobbyChat extends StatefulWidget {
@@ -38,6 +39,10 @@ class _LobbyChatState extends State<LobbyChat> {
 
     setState(() => _isLoading = true);
 
+    final filter = ProfanityFilter();
+    final cleanMessage = filter.censor(_controller.text.trim());
+
+
     try {
       await FirebaseFirestore.instanceFor(
         app: Firebase.app(),
@@ -49,14 +54,13 @@ class _LobbyChatState extends State<LobbyChat> {
           .add({
         'senderUid': user?.uid,
         'senderName': user?.displayName ?? "Player",
-        'text': _controller.text.trim(),
+        'text': cleanMessage, // Send the censored (clean) message
         'timestamp': FieldValue.serverTimestamp(),
-        'localTimestamp': DateTime.now().millisecondsSinceEpoch, // Fallback for ordering
+        'localTimestamp': DateTime.now().millisecondsSinceEpoch,
       });
 
       _controller.clear();
 
-      // Auto-scroll to bottom after sending
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
           _scrollController.animateTo(
