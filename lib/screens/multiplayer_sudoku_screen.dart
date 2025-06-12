@@ -1,5 +1,3 @@
-// screens/multiplayer_sudoku_screen.dart
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -57,6 +55,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
   Map<String, PlayerGameState> _opponentStates = {};
   StreamSubscription? _gameStatesSubscription;
   StreamSubscription? _coOpMovesSubscription;
+  StreamSubscription? _finalResultSubscription;
 
   @override
   void initState() {
@@ -71,15 +70,57 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     _initializeOpponentStates();
     _listenToGameStates();
 
-    // The listener setup is moved to addPostFrameCallback to be safer
+    if (widget.lobby.isRanked) {
+      _listenForFinalResult();
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeGame();
-      // Set up listener for co-op moves after the first frame is built
       if (widget.lobby.gameMode == GameMode.coop) {
         _listenForCoOpMoves();
       }
     });
   }
+
+  void _listenForFinalResult() {
+    _finalResultSubscription =
+        GameStateService.getFinalGameResultStream(widget.lobby.id).listen((resultDoc) {
+          // Ensure the result exists and the game hasn't already ended on this client
+          if (resultDoc.exists && mounted && !_gameEnded) {
+            _gameEnded = true; // Mark game as ended immediately to prevent other logic
+            _stopGame();       // Stop the timer and other activities
+
+            final resultData = resultDoc.data() as Map<String, dynamic>;
+            final currentUser = FirebaseAuth.instance.currentUser;
+            if (currentUser == null) return;
+
+            final sudokuProvider = context.read<SudokuProvider>();
+
+            // Determine the outcome for the current player
+            final isWin = resultData['winnerId'] == currentUser.uid;
+            final winnerName = resultData['winnerName'];
+            final reason = resultData['reason'] as String?; // "Forfeit", "Mistakes", etc.
+
+            // Navigate to the result screen with all the necessary info
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MultiplayerResultScreen(
+                  isWin: isWin,
+                  time: _formattedTime,
+                  solvedBlocks: sudokuProvider.solved,
+                  totalToSolve: _calculateTotalToSolve(),
+                  lobby: widget.lobby,
+                  winnerName: winnerName,
+                  // Pass the reason to the result screen
+                  reason: reason,
+                ),
+              ),
+            );
+          }
+        });
+  }
+
 
   void _initializeOpponentStates() {
     for (final player in widget.lobby.playersList) {
@@ -114,14 +155,11 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
   }
 
   void _listenForCoOpMoves() {
-    print("DEBUG: Setting up co-op move listener for lobby ${widget.lobby.id}");
     final sudokuProvider = context.read<SudokuProvider>();
     final localPlayerId = FirebaseAuth.instance.currentUser?.uid;
 
     _coOpMovesSubscription = LobbyService.getCoOpMoves(widget.lobby.id).listen((moveData) {
-      print("DEBUG: Received move data: $moveData");
       if (moveData['playerId'] != null && moveData['playerId'] != localPlayerId) {
-        print("DEBUG: Applying move from opponent ${moveData['playerId']}");
         sudokuProvider.applyMove(
           moveData['row'],
           moveData['col'],
@@ -136,7 +174,6 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     final sudokuProvider = Provider.of<SudokuProvider>(context, listen: false);
     final powerupProvider = Provider.of<PowerupProvider>(context, listen: false);
 
-    // Set the lobbyId in the provider so it can send moves
     sudokuProvider.setLobbyId(widget.lobby.id);
 
     final screenWidth = MediaQuery.of(context).size.width;
@@ -148,11 +185,15 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
       powerupProvider.initialize(widget.lobby.id);
       sudokuProvider.initializePowerups(powerupProvider);
     }
+    if (widget.lobby.isRanked) {
+      sudokuProvider.setGameLostCallback(_handleLocalPlayerLoss);
+    }
 
     sudokuProvider.loadPuzzle(
       widget.puzzle,
       gameSettings: widget.lobby.gameSettings,
       gameMode: widget.lobby.gameMode,
+
     );
 
     Future.delayed(const Duration(seconds: 3), () {
@@ -168,7 +209,6 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
 
   void _handleNewBombEffect(PowerupEffect bombEffect) {
     if (!mounted || _isBombExploding) return;
-
     final sudokuProvider = Provider.of<SudokuProvider>(context, listen: false);
     final powerupProvider = Provider.of<PowerupProvider>(context, listen: false);
 
@@ -178,14 +218,11 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
 
     Future.delayed(const Duration(milliseconds: 2500), () {
       if (!mounted || _activeBombEffect?.id != bombEffect.id) return;
-
       final cellsDestroyed = sudokuProvider.applyBombEffect(bombEffect.data);
-
       setState(() {
         _isBombExploding = true;
         _bombCellsDestroyed = cellsDestroyed;
       });
-
       Future.delayed(const Duration(milliseconds: 1500), () {
         if (!mounted) return;
         powerupProvider.markBombEffectAsHandled(bombEffect.id);
@@ -204,10 +241,10 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     _timer.cancel();
     _gameStatesSubscription?.cancel();
     _coOpMovesSubscription?.cancel();
+    _finalResultSubscription?.cancel();
     Provider.of<PowerupProvider>(context, listen: false).dispose();
     super.dispose();
   }
-
   void _stopGame() {
     _stopwatch.stop();
     _timer.cancel();
@@ -216,162 +253,10 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // Watch the LobbyProvider to get real-time lobby data (for hints)
-    final currentLobby = context.watch<LobbyProvider>().currentLobby;
-
-    return Consumer2<SudokuProvider, PowerupProvider>(
-      builder: (context, sudokuProvider, powerupProvider, child) {
-
-        if (sudokuProvider.isGameOver && !_gameEnded) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (widget.lobby.gameMode == GameMode.coop) {
-              _handleCoOpGameEnd(sudokuProvider.isGameWon ?? false, sudokuProvider);
-            } else {
-              _handleGameEnd(sudokuProvider.isGameWon ?? false, sudokuProvider);
-            }
-          });
-        }
-
-        // Update the provider with the latest shared hint count in co-op mode
-        if (widget.lobby.gameMode == GameMode.coop && currentLobby != null) {
-          sudokuProvider.updateSharedHints(currentLobby.sharedHintCount);
-          sudokuProvider.updateSharedMistakes(currentLobby.sharedMistakeCount);
-        }
-
-        if (!_gameStarted) {
-          return _buildWaitingScreen();
-        }
-
-        return Scaffold(
-          appBar: AppBar(
-            title: Text('${widget.lobby.gameMode.name.toUpperCase()} Sudoku - ${widget.lobby.gameSettings.difficulty.toUpperCase()}'),
-            backgroundColor: widget.lobby.gameMode == GameMode.powerup
-                ? Colors.purple
-                : (widget.lobby.gameMode == GameMode.coop ? Colors.teal : Theme.of(context).primaryColor),
-            foregroundColor: Colors.white,
-            actions: [
-              if (widget.lobby.gameMode == GameMode.powerup)
-                IconButton(icon: const Icon(Icons.info_outline), onPressed: _showPowerupInfo),
-              IconButton(icon: const Icon(Icons.people), onPressed: _showPlayersList),
-            ],
-          ),
-          body: Stack(
-            children: [
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isWeb = kIsWeb;
-                  final progressHeight = 80.0;
-                  final statsHeight = 60.0;
-                  final powerupBarHeight = widget.lobby.gameMode == GameMode.powerup ? (isWeb ? 100.0 : 80.0) : 0.0;
-                  final keypadHeight = isWeb ? 120.0 : 100.0;
-
-                  return Column(
-                    children: [
-                      // Conditionally render the progress bar based on game mode
-                      if (widget.lobby.gameMode == GameMode.coop)
-                        _buildSharedProgress(sudokuProvider)
-                      else
-                        SizedBox(height: progressHeight, child: Column(children: [_buildOpponentProgress(), _buildMyProgress(sudokuProvider.progress)])),
-
-                      Container(
-                        height: statsHeight,
-                        padding: const EdgeInsets.symmetric(vertical: 4.0),
-                        child: FractionallySizedBox(
-                          widthFactor: 0.9,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              SizedBox(width: 80, child: FittedBox(fit: BoxFit.scaleDown, child: SudokuMistakesCounter(mistakes: sudokuProvider.mistakesCount, maxMistakes: sudokuProvider.maxMistakes))),
-                              GameTimerWidget(timeLimitSeconds: widget.lobby.gameSettings.timeLimit, isGameActive: _gameStarted && !_gameEnded, bonusSeconds: sudokuProvider.bonusTimeAdded, onTimeUp: () => setState(() => _timeUp = true), onTimeUpdate: (timeStr) => setState(() => _formattedTime = timeStr)),
-                              SizedBox(width: 80, child: FittedBox(fit: BoxFit.scaleDown, child: SudokuCorrectCounter(solved: sudokuProvider.solved, totalToSolve: _calculateTotalToSolve()))),
-                            ],
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Stack(
-                          children: [
-                            const Padding(
-                              padding: EdgeInsets.all(8.0),
-                              child: SudokuBoard(),
-                            ),
-                            if (_activeBombEffect != null && !_isBombExploding)
-                              Positioned.fill(
-                                child: BombTargetOverlay(
-                                  startRow: _activeBombEffect!.data['startRow'] ?? 0,
-                                  startCol: _activeBombEffect!.data['startCol'] ?? 0,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      if (widget.lobby.gameMode == GameMode.powerup)
-                        SizedBox(height: powerupBarHeight, child: PowerupBar()),
-                      SizedBox(height: keypadHeight, child: const NumberKeypad()),
-                    ],
-                  );
-                },
-              ),
-
-              if (widget.lobby.gameSettings.allowHints)
-                Positioned(left: _hintButtonOffset.dx, top: _hintButtonOffset.dy, child: Draggable(feedback: _buildHintButton(), childWhenDragging: Opacity(opacity: 0.4, child: _buildHintButton()), onDragEnd: (details) => setState(() => _hintButtonOffset = Offset(details.offset.dx.clamp(0, MediaQuery.of(context).size.width - 60), details.offset.dy.clamp(0, MediaQuery.of(context).size.height - 60))), child: _buildHintButton())),
-
-              if (powerupProvider.isFrozen)
-                FreezeOverlay(remainingSeconds: powerupProvider.freezeTimeRemaining),
-              if (powerupProvider.shouldShowSolution)
-                SolutionOverlay(
-                  remainingSeconds: powerupProvider.solutionShowTimeRemaining,
-                  solution: sudokuProvider.solution,
-                ),
-              if (_isBombExploding)
-                BombExplosionOverlay(
-                  startRow: _activeBombEffect?.data['startRow'] ?? 0,
-                  startCol: _activeBombEffect?.data['startCol'] ?? 0,
-                  cellsDestroyed: _bombCellsDestroyed,
-                  onComplete: () {},
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  void _checkEndGameConditions(SudokuProvider sudokuProvider) {
-    if (_gameEnded) return;
-
-    bool isOver = false;
-    bool isWin = false;
-
-    if (sudokuProvider.isSolved) {
-      isOver = true;
-      isWin = true;
-    } else if (_timeUp || (sudokuProvider.maxMistakes > 0 && sudokuProvider.mistakesCount >= sudokuProvider.maxMistakes)) {
-      isOver = true;
-      isWin = false;
-    }
-
-    if (isOver) {
-      // NEW: Route to the correct game-end handler
-      if (widget.lobby.gameMode == GameMode.coop) {
-        Future.microtask(() => _handleCoOpGameEnd(isWin, sudokuProvider));
-      } else {
-        // The original handler for competitive modes
-        Future.microtask(() => _handleGameEnd(isWin, sudokuProvider));
-      }
-    }
-  }
-
   Future<void> _handleCoOpGameEnd(bool isWin, SudokuProvider provider) async {
     if (_gameEnded) return;
     _stopGame();
-
-    // 1. Get the solve counts for each player from the provider.
     final playerSolveCounts = provider.getPlayerSolveCounts();
-
-    // 2. Navigate to the result screen with the new co-op data.
     if (mounted) {
       Navigator.pushReplacement(
         context,
@@ -382,7 +267,6 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             solvedBlocks: provider.solved,
             totalToSolve: _calculateTotalToSolve(),
             lobby: widget.lobby,
-            // Pass the new co-op specific data
             playerSolveCounts: playerSolveCounts,
           ),
         ),
@@ -390,59 +274,253 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     }
   }
 
-  Future<void> _handleGameEnd(bool isWin, SudokuProvider provider, {bool timeUp = false}) async {
+
+  void _handleLocalPlayerLoss() {
     if (_gameEnded) return;
-    _stopGame();
 
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
 
+    // Find the opponent who will be the winner
+    final opponent = widget.lobby.playersList.firstWhere((p) => p.id != currentUser.uid);
+
+    // This single call will create the 'finalResult' doc, triggering the stream for both players
+    GameStateService.endRankedMatch(
+      lobbyId: widget.lobby.id,
+      winnerId: opponent.id,
+      loserId: currentUser.uid,
+      reason: "Mistakes", // Provide the specific reason
+    );
+    // No navigation code here. The stream listener handles it.
+  }
+
+  Future<void> _handleGameEnd(bool isWin, SudokuProvider provider, {bool timeUp = false}) async {
+    if (_gameEnded) return;
+    _stopGame();
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
     await GameStateService.updatePlayerGameStatus(widget.lobby.id, isCompleted: isWin, completionTime: _formattedTime, solvedCells: provider.solved, totalCells: _calculateTotalToSolve(), mistakes: provider.mistakesCount);
     await Future.delayed(const Duration(milliseconds: 500));
-
     final gameResult = await GameStateService.getGameResult(widget.lobby.id, currentUser.uid);
     final opponentStillPlaying = _opponentStates.values.any((state) => !state.isCompleted && state.playerId != currentUser.uid);
-
     if (mounted) {
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => MultiplayerResultScreen(isWin: isWin, time: _formattedTime, solvedBlocks: provider.solved, totalToSolve: _calculateTotalToSolve(), lobby: widget.lobby, winnerName: gameResult['winnerName'], isOpponentStillPlaying: opponentStillPlaying, isFirstPlace: gameResult['isFirstPlace'] ?? isWin)));
     }
   }
 
-  void _showPowerupInfo() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.flash_on, color: Colors.purple),
-            SizedBox(width: 8),
-            Text('Powerup System'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Player-Specific Powerups', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            const Text('• 8 powerups are scheduled per game.'),
-            const Text('• They spawn every 45-90 seconds.'),
-            const Text('• Each player gets a unique, valid spawn location.'),
-            const Text('• Powerups only appear in your unsolved cells.'),
-            const SizedBox(height: 12),
-            const Text('Available Powerups:', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            ...PowerupType.values.map((type) => Text('${type.iconPath} ${type.displayName}')).toList(),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+  Future<void> _handleAbandonGame() async {
+    if (_gameEnded) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    if (widget.lobby.isRanked) {
+      final opponent = widget.lobby.playersList.firstWhere((p) => p.id != user.uid);
+
+      // Report the forfeit. The stream listener will navigate both players.
+      await GameStateService.endRankedMatch(
+        lobbyId: widget.lobby.id,
+        winnerId: opponent.id,
+        loserId: user.uid,
+        reason: "Forfeit", // Provide the specific reason
+      );
+    } else {
+      // Logic for abandoning casual/co-op games remains the same
+      await context.read<LobbyProvider>().leaveLobby();
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    }
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    final currentLobby = context.watch<LobbyProvider>().currentLobby;
+
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) async {
+        if (didPop) return;
+
+        final shouldLeave = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: Text('Abandon Game?'),
+            content: Text(
+              widget.lobby.isRanked
+                  ? 'If you leave, you will forfeit the match and lose rating points. This action cannot be undone.'
+                  : 'Are you sure you want to leave this game? You will not be able to rejoin.',
+            ),
+            actions: <Widget>[
+              TextButton(
+                child: Text('Cancel'),
+                onPressed: () => Navigator.of(context).pop(false),
+              ),
+              ElevatedButton(
+                child: Text('Abandon'),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.of(context).pop(true),
+              ),
+            ],
           ),
-        ],
+        );
+
+        if (shouldLeave ?? false) {
+          _handleAbandonGame();
+        }
+      },
+      child: Consumer2<SudokuProvider, PowerupProvider>(
+        builder: (context, sudokuProvider, powerupProvider, child) {
+
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (widget.lobby.gameMode == GameMode.coop && currentLobby != null) {
+              sudokuProvider.updateSharedHints(currentLobby.sharedHintCount);
+              sudokuProvider.updateSharedMistakes(currentLobby.sharedMistakeCount);
+            }
+            if (sudokuProvider.isGameOver && !_gameEnded) {
+              if (widget.lobby.gameMode == GameMode.coop) {
+                _handleCoOpGameEnd(sudokuProvider.isGameWon ?? false, sudokuProvider);
+              } else {
+                _handleGameEnd(sudokuProvider.isGameWon ?? false, sudokuProvider);
+              }
+            }
+          });
+
+          if (!_gameStarted) {
+            return _buildWaitingScreen();
+          }
+
+          return Scaffold(
+            appBar: AppBar(
+              title: Text('${widget.lobby.gameMode.name.toUpperCase()} Sudoku - ${widget.lobby.gameSettings.difficulty.toUpperCase()}'),
+              backgroundColor: widget.lobby.gameMode == GameMode.powerup
+                  ? Colors.purple
+                  : (widget.lobby.gameMode == GameMode.coop ? Colors.teal : Theme.of(context).primaryColor),
+              foregroundColor: Colors.white,
+              actions: [
+                if (widget.lobby.gameMode == GameMode.powerup)
+                  IconButton(icon: const Icon(Icons.info_outline), onPressed: _showPowerupInfo),
+                IconButton(icon: const Icon(Icons.people), onPressed: _showPlayersList),
+              ],
+            ),
+            body: Stack(
+              children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isWeb = kIsWeb;
+                    final progressHeight = 80.0;
+                    final statsHeight = 60.0;
+                    final powerupBarHeight = widget.lobby.gameMode == GameMode.powerup ? (isWeb ? 100.0 : 80.0) : 0.0;
+                    final keypadHeight = isWeb ? 120.0 : 100.0;
+
+                    return Column(
+                      children: [
+                        if (widget.lobby.gameMode == GameMode.coop)
+                          _buildSharedProgress(sudokuProvider)
+                        else
+                          SizedBox(height: progressHeight, child: Column(children: [_buildOpponentProgress(), _buildMyProgress(sudokuProvider.progress)])),
+
+                        Container(
+                          height: statsHeight,
+                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: FractionallySizedBox(
+                            widthFactor: 0.9,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                SizedBox(width: 80, child: FittedBox(fit: BoxFit.scaleDown, child: SudokuMistakesCounter(mistakes: sudokuProvider.mistakesCount, maxMistakes: sudokuProvider.maxMistakes))),
+                                GameTimerWidget(timeLimitSeconds: widget.lobby.gameSettings.timeLimit, isGameActive: _gameStarted && !_gameEnded, bonusSeconds: sudokuProvider.bonusTimeAdded, onTimeUp: () => setState(() => _timeUp = true), onTimeUpdate: (timeStr) => setState(() => _formattedTime = timeStr)),
+                                SizedBox(width: 80, child: FittedBox(fit: BoxFit.scaleDown, child: SudokuCorrectCounter(solved: sudokuProvider.solved, totalToSolve: _calculateTotalToSolve()))),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.all(8.0),
+                                child: SudokuBoard(),
+                              ),
+                              if (_activeBombEffect != null && !_isBombExploding)
+                                Positioned.fill(
+                                  child: BombTargetOverlay(
+                                    startRow: _activeBombEffect!.data['startRow'] ?? 0,
+                                    startCol: _activeBombEffect!.data['startCol'] ?? 0,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (widget.lobby.gameMode == GameMode.powerup)
+                          SizedBox(height: powerupBarHeight, child: PowerupBar()),
+                        SizedBox(height: keypadHeight, child: const NumberKeypad()),
+                      ],
+                    );
+                  },
+                ),
+
+                if (widget.lobby.gameSettings.allowHints)
+                  Positioned(left: _hintButtonOffset.dx, top: _hintButtonOffset.dy, child: Draggable(feedback: _buildHintButton(), childWhenDragging: Opacity(opacity: 0.4, child: _buildHintButton()), onDragEnd: (details) => setState(() => _hintButtonOffset = Offset(details.offset.dx.clamp(0, MediaQuery.of(context).size.width - 60), details.offset.dy.clamp(0, MediaQuery.of(context).size.height - 60))), child: _buildHintButton())),
+
+                if (powerupProvider.isFrozen)
+                  FreezeOverlay(remainingSeconds: powerupProvider.freezeTimeRemaining),
+                if (powerupProvider.shouldShowSolution)
+                  SolutionOverlay(
+                    remainingSeconds: powerupProvider.solutionShowTimeRemaining,
+                    solution: sudokuProvider.solution,
+                  ),
+                if (_isBombExploding)
+                  BombExplosionOverlay(
+                    startRow: _activeBombEffect?.data['startRow'] ?? 0,
+                    startCol: _activeBombEffect?.data['startCol'] ?? 0,
+                    cellsDestroyed: _bombCellsDestroyed,
+                    onComplete: () {},
+                  ),
+              ],
+            ),
+          );
+        },
       ),
     );
+  }
+
+  void _showPowerupInfo() {
+    showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.flash_on, color: Colors.purple),
+              SizedBox(width: 8),
+              Text('Powerup System'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Player-Specific Powerups', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              const Text('• 8 powerups are scheduled per game.'),
+              const Text('• They spawn every 45-90 seconds.'),
+              const Text('• Each player gets a unique, valid spawn location.'),
+              const Text('• Powerups only appear in your unsolved cells.'),
+              const SizedBox(height: 12),
+              const Text('Available Powerups:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              ...PowerupType.values.map((type) => Text('${type.iconPath} ${type.displayName}')).toList(),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ));
   }
 
   Widget _buildSharedProgress(SudokuProvider sudokuProvider) {

@@ -23,6 +23,7 @@ class MultiplayerResultScreen extends StatefulWidget {
   final bool isOpponentStillPlaying;
   final bool isFirstPlace;
   final Map<String, int>? playerSolveCounts;
+  final String? reason;
 
   const MultiplayerResultScreen({
     Key? key,
@@ -35,6 +36,7 @@ class MultiplayerResultScreen extends StatefulWidget {
     this.isOpponentStillPlaying = false,
     this.isFirstPlace = true,
     this.playerSolveCounts,
+    this.reason,
   }) : super(key: key);
 
   @override
@@ -52,6 +54,7 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
   int? _myNewRating;
   bool _ratingsUpdated = false;
   bool _hasNavigated = false;
+
 
   @override
   void initState() {
@@ -131,6 +134,31 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
       );
     }
   }
+  String _getTitle() {
+    if (widget.reason == 'Forfeit') {
+      return widget.isWin ? 'Opponent Forfeited!' : 'You Forfeited';
+    }
+    if (widget.reason == 'Mistakes') {
+      return widget.isWin ? 'You Won!' : 'Lost on Mistakes';
+    }
+    // Default outcome for a normal game completion.
+    return widget.isWin ? 'You are the Winner!' : 'Better Luck Next Time!';
+  }
+
+  // Helper function to get a more detailed subtitle.
+  String _getSubtitle() {
+    if (widget.reason == 'Forfeit' && widget.isWin) {
+      return 'You won the match because your opponent left the game.';
+    }
+    if (widget.reason == 'Mistakes' && widget.isWin) {
+      return 'You won because your opponent made too many mistakes.';
+    }
+    if (widget.isWin) {
+      return 'Congratulations on solving the puzzle first!';
+    } else {
+      return 'Your opponent, ${widget.winnerName ?? 'Player'}, won the match.';
+    }
+  }
 
   @override
   void dispose() {
@@ -142,36 +170,81 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        _returnToLobby();
-        return false;
-      },
-      child: Scaffold(
-        backgroundColor: _getBackgroundColor(),
-        appBar: AppBar(
-          title: Text(widget.lobby.isRanked ? 'Ranked Result' : 'Game Result'),
-          backgroundColor: _getAppBarColor(),
-          foregroundColor: Colors.white,
-          automaticallyImplyLeading: false,
-          actions: [
-            TextButton(
-              onPressed: () {
-                if (!_hasNavigated) _returnToLobby();
-              },
-              child: Text(
-                widget.lobby.isRanked ? 'Find New Game' : 'Return to Lobby',
-                style: TextStyle(color: Colors.white),
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Match Over'),
+        automaticallyImplyLeading: false, // Disables the back button.
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                widget.isWin ? Icons.emoji_events_outlined : Icons.sentiment_dissatisfied_outlined,
+                size: 120,
+                color: widget.isWin ? Colors.amber[600] : Colors.blueGrey,
               ),
-            ),
-          ],
-        ),
-        body: Center(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.all(24),
-            child: widget.lobby.gameMode == GameMode.coop
-                ? _buildCoOpResultBody()
-                : _buildCompetitiveResultBody(),
+              const SizedBox(height: 24),
+              Text(
+                _getTitle(),
+                textAlign: TextAlign.center,
+                style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _getSubtitle(),
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium?.copyWith(color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 40),
+              // A card to display the final match stats.
+              Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      Text('Match Stats', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Final Time:', style: TextStyle(fontSize: 16)),
+                          Text(widget.time, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Cells Solved:', style: TextStyle(fontSize: 16)),
+                          Text('${widget.solvedBlocks} / ${widget.totalToSolve}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const Spacer(),
+              // Button to navigate the user out of the results screen.
+              ElevatedButton(
+                onPressed: () {
+                  // Navigate back to the very first screen in the stack (e.g., your home screen).
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                },
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 50), // Make button wide
+                  textStyle: const TextStyle(fontSize: 18),
+                ),
+                child: const Text('Return to Main Menu'),
+              ),
+              const SizedBox(height: 20),
+            ],
           ),
         ),
       ),

@@ -64,6 +64,7 @@ class GameSettings {
     );
   }
 
+
   Map<String, dynamic> toMap() {
     return {
       'timeLimit': timeLimit,

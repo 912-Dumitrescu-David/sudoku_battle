@@ -38,6 +38,7 @@ class SudokuProvider extends ChangeNotifier {
   GameSettings? _gameSettings;
   GameMode _currentGameMode = GameMode.classic; // 🔥 Track current game mode
   bool _isPowerupMode = false; // 🔥 Track if powerups are enabled
+  VoidCallback? onRankedGameLost;
 
   // Powerup integration
   PowerupProvider? _powerupProvider;
@@ -48,6 +49,7 @@ class SudokuProvider extends ChangeNotifier {
 
   bool isGameOver = false;
   bool? isGameWon;
+  bool _isRankedGame = false;
 
   SudokuProvider() {
     _board = List.generate(9, (_) => List.filled(9, null));
@@ -94,6 +96,10 @@ class SudokuProvider extends ChangeNotifier {
 
   void setLobbyId(String lobbyId) {
     _lobbyId = lobbyId;
+  }
+
+  void setGameLostCallback(VoidCallback callback) {
+    onRankedGameLost = callback;
   }
 
   void _handlePowerupEffect(String effectType) {
@@ -208,12 +214,14 @@ class SudokuProvider extends ChangeNotifier {
       Map<String, dynamic> puzzleData, {
         GameSettings? gameSettings,
         GameMode gameMode = GameMode.classic, // 🔥 Add game mode parameter
+        bool isRanked = false, // 🔥 Add ranked game flag
       }) {
     print('📥 SudokuProvider: Loading puzzle for mode: $gameMode');
 
     // Store game settings and mode
     _gameSettings = gameSettings;
     _currentGameMode = gameMode;
+    _isRankedGame = isRanked;
     _isPowerupMode = gameMode == GameMode.powerup; // 🔥 Only enable powerups for powerup mode
     _playerCellEntries = List.generate(9, (_) => List.filled(9, null));
     // Apply game settings
@@ -336,6 +344,12 @@ class SudokuProvider extends ChangeNotifier {
       _internalCheckEndGameConditions();
 
       notifyListeners();
+
+      if (!isCorrect && _isRankedGame) {
+        if (_mistakesCount >= _maxMistakes) {
+          onRankedGameLost?.call();
+        }
+      }
     }
   }
 
@@ -631,6 +645,7 @@ class SudokuProvider extends ChangeNotifier {
 
     return totalCells > 0 ? filledCells / totalCells : 0.0;
   }
+
 
   /// Check if cell has powerup (for UI highlighting) - 🔥 ONLY for powerup mode
   bool hasPowerupAt(int row, int col) {
