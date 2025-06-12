@@ -197,20 +197,16 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
     _hasNavigated = true;
 
     if (widget.lobby.isRanked) {
+      // Ranked games -> go to ranked queue
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => RankedQueueScreen()),
             (route) => route.isFirst,
       );
     } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => PostGameLobbyScreen(
-            lobbyId: widget.lobby.id,
-            wasGameCompleted: true,
-            isRankedGame: false,
-          ),
-        ),
+      // Casual games -> go to lobby browser for multiplayer
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => LobbyScreen()),
+            (route) => route.isFirst,
       );
     }
   }
@@ -696,7 +692,7 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
       child: Column(
         children: [
           Text(
-            widget.lobby.isRanked ? 'Finding new game in' : 'Returning to lobby in',
+            widget.lobby.isRanked ? 'Finding new ranked game in' : 'Returning to lobby browser in',
             style: TextStyle(fontSize: 16, color: Theme.of(context).primaryColor),
           ),
           SizedBox(height: 8),
@@ -751,8 +747,8 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
             onPressed: () {
               if (!_hasNavigated) _returnToLobby();
             },
-            icon: Icon(widget.lobby.isRanked ? Icons.search : Icons.chat),
-            label: Text(widget.lobby.isRanked ? 'Find New Game' : 'Back to Lobby'),
+            icon: Icon(widget.lobby.isRanked ? Icons.emoji_events : Icons.search),
+            label: Text(widget.lobby.isRanked ? 'Find Ranked Game' : 'Find Casual Game'),
             style: ElevatedButton.styleFrom(
               padding: EdgeInsets.symmetric(vertical: 12),
               backgroundColor: Theme.of(context).primaryColor,

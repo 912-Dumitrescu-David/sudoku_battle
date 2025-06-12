@@ -59,9 +59,6 @@ class GameStateService {
     }
   }
 
-
-
-
   // Try to atomically claim first place
   static Future<void> _tryClaimFirstPlace(String lobbyId, String playerId, String playerName) async {
     try {
@@ -200,7 +197,7 @@ class GameStateService {
           .collection('gameStates')
           .get();
 
-      // Clear game results (first place claims)
+      // Clear game results
       final gameResults = await _firestore
           .collection('lobbies')
           .doc(lobbyId)
@@ -265,66 +262,14 @@ class GameStateService {
         .toList());
   }
 
-  static Future<void> forfeitMatch(String lobbyId, String abandoningPlayerId) async {
-    final lobbyRef = _firestore.collection('lobbies').doc(lobbyId);
-
-    try {
-      await _firestore.runTransaction((transaction) async {
-        final lobbyDoc = await transaction.get(lobbyRef);
-        if (!lobbyDoc.exists) {
-          throw Exception("Lobby not found");
-        }
-
-        final lobby = Lobby.fromFirestore(lobbyDoc);
-
-        // Find the opponent who will be the winner
-        final opponent = lobby.playersList.firstWhere(
-              (p) => p.id != abandoningPlayerId,
-          orElse: () => throw Exception("Opponent not found"),
-        );
-
-        // Update the lobby status to 'completed' to prevent rejoining
-        transaction.update(lobbyRef, {'status': 'completed'});
-
-        // Create a game result document. This is what the opponent's app will listen for.
-        final gameResultRef = lobbyRef.collection('gameResults').doc();
-        transaction.set(gameResultRef, {
-          'winnerId': opponent.id,
-          'winnerName': opponent.name,
-          'loserId': abandoningPlayerId,
-          'reason': 'Forfeit',
-          'finishedAt': FieldValue.serverTimestamp(),
-        });
-      });
-
-      // After the transaction is successful, update the player ratings
-      // This is done outside the transaction for simplicity.
-      final lobbyDoc = await lobbyRef.get();
-      if (!lobbyDoc.exists) return;
-
-      final lobby = Lobby.fromFirestore(lobbyDoc);
-      final abandoningPlayer = lobby.playersList.firstWhere((p) => p.id == abandoningPlayerId, orElse: () => throw Exception("Abandoning player not found after transaction"));
-      final winningPlayer = lobby.playersList.firstWhere((p) => p.id != abandoningPlayerId, orElse: () => throw Exception("Winning player not found after transaction"));
-
-      await RankingService.updatePlayerRatings(
-        winnerId: winningPlayer.id,
-        loserId: abandoningPlayer.id,
-        winnerOldRating: winningPlayer.rating,
-        loserOldRating: abandoningPlayer.rating,
-      );
-
-    } catch (e) {
-      print("Error forfeiting match: $e");
-      // Handle or log the error as needed
-    }
-  }
-
-  // NEW: Authoritative method to end a ranked match for any reason.
-  static Future<void> endRankedMatch({
+  // 🔥 NEW: Universal method to end any match (ranked, casual, or co-op) for any reason
+  static Future<void> endMatch({
     required String lobbyId,
     required String winnerId,
     required String loserId,
-    required String reason, // e.g., "Mistakes", "Forfeit", "Timeout"
+    required String reason, // e.g., "Mistakes", "Forfeit", "Timeout", "Completion"
+    String? winnerName,
+    String? loserName,
   }) async {
     final lobbyRef = _firestore.collection('lobbies').doc(lobbyId);
 
@@ -352,32 +297,89 @@ class GameStateService {
         // 1. Mark the lobby as completed
         transaction.update(lobbyRef, {'status': 'completed'});
 
-        // 2. Write the definitive game result
+        // 2. Write the definitive game result that ALL players will listen to
         final gameResultRef = lobbyRef.collection('gameResults').doc('finalResult');
         transaction.set(gameResultRef, {
           'winnerId': winner.id,
-          'winnerName': winner.name,
+          'winnerName': winnerName ?? winner.name,
           'loserId': loser.id,
-          'loserName': loser.name,
+          'loserName': loserName ?? loser.name,
           'reason': reason,
           'finishedAt': FieldValue.serverTimestamp(),
+          'gameMode': lobbyData['gameMode'] ?? 'classic',
+          'isRanked': lobbyData['isRanked'] ?? false,
         });
 
-        // 3. Update ratings
-        await RankingService.updatePlayerRatings(
-          winnerId: winner.id,
-          loserId: loser.id,
-          winnerOldRating: winner.rating,
-          loserOldRating: loser.rating,
-        );
+        // 3. Update ratings ONLY if it's a ranked game
+        if (lobbyData['isRanked'] == true) {
+          await RankingService.updatePlayerRatings(
+            winnerId: winner.id,
+            loserId: loser.id,
+            winnerOldRating: winner.rating,
+            loserOldRating: loser.rating,
+          );
+          print('✅ Updated ratings for ranked match');
+        }
       });
-      print('✅ Ranked match ended. Winner: ${winnerId}, Reason: $reason');
+
     } catch (e) {
-      print("❌ Error ending ranked match: $e");
+      print("❌ Error ending match: $e");
     }
   }
 
-  // NEW: A stream to listen for the final game result document
+  // 🔥 UPDATED: Specific method for ranked matches (now uses universal endMatch)
+  static Future<void> endRankedMatch({
+    required String lobbyId,
+    required String winnerId,
+    required String loserId,
+    required String reason,
+  }) async {
+    await endMatch(
+      lobbyId: lobbyId,
+      winnerId: winnerId,
+      loserId: loserId,
+      reason: reason,
+    );
+  }
+
+  // 🔥 NEW: Method to handle forfeit for any game mode
+  static Future<void> handleForfeit({
+    required String lobbyId,
+    required String forfeitingPlayerId,
+  }) async {
+    final lobbyRef = _firestore.collection('lobbies').doc(lobbyId);
+
+    try {
+      final lobbyDoc = await lobbyRef.get();
+      if (!lobbyDoc.exists) {
+        throw Exception("Lobby not found");
+      }
+
+      final lobby = Lobby.fromFirestore(lobbyDoc);
+
+      // Find the opponent who will be the winner
+      final opponent = lobby.playersList.firstWhere(
+            (p) => p.id != forfeitingPlayerId,
+        orElse: () => throw Exception("Opponent not found"),
+      );
+
+      // End the match with forfeit reason
+      await endMatch(
+        lobbyId: lobbyId,
+        winnerId: opponent.id,
+        loserId: forfeitingPlayerId,
+        reason: "Forfeit",
+        winnerName: opponent.name,
+      );
+
+      print('✅ Forfeit handled: ${opponent.name} wins by forfeit');
+    } catch (e) {
+      print("❌ Error handling forfeit: $e");
+      rethrow;
+    }
+  }
+
+  // 🔥 NEW: Universal stream to listen for final game results (works for all game modes)
   static Stream<DocumentSnapshot> getFinalGameResultStream(String lobbyId) {
     return _firestore
         .collection('lobbies')
@@ -386,7 +388,6 @@ class GameStateService {
         .doc('finalResult')
         .snapshots();
   }
-
 }
 
 class PlayerGameState {

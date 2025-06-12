@@ -93,7 +93,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         : user?.email ?? "player";
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sudoku Battle'),
+        title: const Text('Sudoku Gladiators'),
         actions: [
           IconButton(
             icon: CircleAvatar(

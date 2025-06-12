@@ -70,9 +70,8 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     _initializeOpponentStates();
     _listenToGameStates();
 
-    if (widget.lobby.isRanked) {
-      _listenForFinalResult();
-    }
+    // 🔥 UPDATED: Listen for final result for ALL game modes, not just ranked
+    _listenForFinalResult();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeGame();
@@ -99,7 +98,15 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             // Determine the outcome for the current player
             final isWin = resultData['winnerId'] == currentUser.uid;
             final winnerName = resultData['winnerName'];
-            final reason = resultData['reason'] as String?; // "Forfeit", "Mistakes", etc.
+            final reason = resultData['reason'] as String?;
+            final gameMode = resultData['gameMode'] as String?;
+            final isRanked = resultData['isRanked'] as bool? ?? false;
+
+            print('🎮 Final result received:');
+            print('   Winner: $winnerName');
+            print('   Reason: $reason');
+            print('   Game Mode: $gameMode');
+            print('   Is Ranked: $isRanked');
 
             // Navigate to the result screen with all the necessary info
             Navigator.pushReplacement(
@@ -112,8 +119,11 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
                   totalToSolve: _calculateTotalToSolve(),
                   lobby: widget.lobby,
                   winnerName: winnerName,
-                  // Pass the reason to the result screen
                   reason: reason,
+                  // Pass co-op specific data if applicable
+                  playerSolveCounts: widget.lobby.gameMode == GameMode.coop
+                      ? sudokuProvider.getPlayerSolveCounts()
+                      : null,
                 ),
               ),
             );
@@ -207,33 +217,6 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     });
   }
 
-  void _handleNewBombEffect(PowerupEffect bombEffect) {
-    if (!mounted || _isBombExploding) return;
-    final sudokuProvider = Provider.of<SudokuProvider>(context, listen: false);
-    final powerupProvider = Provider.of<PowerupProvider>(context, listen: false);
-
-    setState(() {
-      _activeBombEffect = bombEffect;
-    });
-
-    Future.delayed(const Duration(milliseconds: 2500), () {
-      if (!mounted || _activeBombEffect?.id != bombEffect.id) return;
-      final cellsDestroyed = sudokuProvider.applyBombEffect(bombEffect.data);
-      setState(() {
-        _isBombExploding = true;
-        _bombCellsDestroyed = cellsDestroyed;
-      });
-      Future.delayed(const Duration(milliseconds: 1500), () {
-        if (!mounted) return;
-        powerupProvider.markBombEffectAsHandled(bombEffect.id);
-        setState(() {
-          _activeBombEffect = null;
-          _isBombExploding = false;
-          _bombCellsDestroyed = 0;
-        });
-      });
-    });
-  }
 
   @override
   void dispose() {
@@ -284,28 +267,50 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     // Find the opponent who will be the winner
     final opponent = widget.lobby.playersList.firstWhere((p) => p.id != currentUser.uid);
 
-    // This single call will create the 'finalResult' doc, triggering the stream for both players
-    GameStateService.endRankedMatch(
+    // Use the universal endMatch method for all game modes
+    GameStateService.endMatch(
       lobbyId: widget.lobby.id,
       winnerId: opponent.id,
       loserId: currentUser.uid,
-      reason: "Mistakes", // Provide the specific reason
+      reason: "Mistakes", // This player lost due to too many mistakes
+      winnerName: opponent.name,
     );
     // No navigation code here. The stream listener handles it.
   }
 
+
   Future<void> _handleGameEnd(bool isWin, SudokuProvider provider, {bool timeUp = false}) async {
     if (_gameEnded) return;
     _stopGame();
+
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
-    await GameStateService.updatePlayerGameStatus(widget.lobby.id, isCompleted: isWin, completionTime: _formattedTime, solvedCells: provider.solved, totalCells: _calculateTotalToSolve(), mistakes: provider.mistakesCount);
-    await Future.delayed(const Duration(milliseconds: 500));
-    final gameResult = await GameStateService.getGameResult(widget.lobby.id, currentUser.uid);
-    final opponentStillPlaying = _opponentStates.values.any((state) => !state.isCompleted && state.playerId != currentUser.uid);
-    if (mounted) {
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => MultiplayerResultScreen(isWin: isWin, time: _formattedTime, solvedBlocks: provider.solved, totalToSolve: _calculateTotalToSolve(), lobby: widget.lobby, winnerName: gameResult['winnerName'], isOpponentStillPlaying: opponentStillPlaying, isFirstPlace: gameResult['isFirstPlace'] ?? isWin)));
+
+    // Update player game status first
+    await GameStateService.updatePlayerGameStatus(
+        widget.lobby.id,
+        isCompleted: isWin,
+        completionTime: _formattedTime,
+        solvedCells: provider.solved,
+        totalCells: _calculateTotalToSolve(),
+        mistakes: provider.mistakesCount
+    );
+
+    if (isWin) {
+      // This player won by completing the puzzle
+      final opponent = widget.lobby.playersList.firstWhere((p) => p.id != currentUser.uid);
+
+      await GameStateService.endMatch(
+        lobbyId: widget.lobby.id,
+        winnerId: currentUser.uid,
+        loserId: opponent.id,
+        reason: timeUp ? "Timeout" : "Completion", // Normal win or timeout win
+        winnerName: currentUser.displayName ?? 'Player',
+        loserName: opponent.name,
+      );
     }
+
+    // Don't navigate here - let the stream listener handle it for consistency
   }
 
   Future<void> _handleAbandonGame() async {
@@ -313,18 +318,16 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    if (widget.lobby.isRanked) {
-      final opponent = widget.lobby.playersList.firstWhere((p) => p.id != user.uid);
-
-      // Report the forfeit. The stream listener will navigate both players.
-      await GameStateService.endRankedMatch(
+    // Use the universal forfeit handler for ALL game modes
+    try {
+      await GameStateService.handleForfeit(
         lobbyId: widget.lobby.id,
-        winnerId: opponent.id,
-        loserId: user.uid,
-        reason: "Forfeit", // Provide the specific reason
+        forfeitingPlayerId: user.uid,
       );
-    } else {
-      // Logic for abandoning casual/co-op games remains the same
+      // The stream listener will navigate both players to the result screen
+    } catch (e) {
+      print('❌ Error handling forfeit: $e');
+      // Fallback: leave lobby the old way
       await context.read<LobbyProvider>().leaveLobby();
       if (mounted) {
         Navigator.of(context).pop();
@@ -350,7 +353,9 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             content: Text(
               widget.lobby.isRanked
                   ? 'If you leave, you will forfeit the match and lose rating points. This action cannot be undone.'
-                  : 'Are you sure you want to leave this game? You will not be able to rejoin.',
+                  : widget.lobby.gameMode == GameMode.coop
+                  ? 'If you leave, your teammate will be left alone to finish the puzzle. Are you sure?'
+                  : 'If you leave, your opponent will win by forfeit. Are you sure?',
             ),
             actions: <Widget>[
               TextButton(
