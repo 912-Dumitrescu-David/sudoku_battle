@@ -51,7 +51,6 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
           builder: (context, lobbyProvider, child) {
             final lobby = lobbyProvider.currentLobby;
 
-            // Check if game is starting and navigate all players
             if (lobby?.status == LobbyStatus.starting) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 _navigateToGame(lobby!);
@@ -66,10 +65,11 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
               return _buildLobbyNotFound();
             }
 
-            return Column(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
+            return SingleChildScrollView(
+              child: Column(
+                children: [
+                  // MODIFIED: The 'Expanded' widget is removed from here.
+                  Padding(
                     padding: EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -84,23 +84,24 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                           _buildAccessCodeSection(lobby),
                         ],
                         SizedBox(height: 24),
-                        _buildPuzzleInfo(lobby), // Add puzzle info section
+                        _buildPuzzleInfo(lobby),
                       ],
                     ),
                   ),
-                ),
-                // Chat widget
-                LobbyChat(
-                  lobbyId: widget.lobbyId,
-                  isExpanded: _isChatExpanded,
-                  onToggleExpand: () {
-                    setState(() {
-                      _isChatExpanded = !_isChatExpanded;
-                    });
-                  },
-                ),
-                _buildBottomActions(lobby, lobbyProvider),
-              ],
+
+                  // The chat widget and bottom actions are now part of the scrollable content.
+                  LobbyChat(
+                    lobbyId: widget.lobbyId,
+                    isExpanded: _isChatExpanded,
+                    onToggleExpand: () {
+                      setState(() {
+                        _isChatExpanded = !_isChatExpanded;
+                      });
+                    },
+                  ),
+                  _buildBottomActions(lobby, lobbyProvider),
+                ],
+              ),
             );
           },
         ),
