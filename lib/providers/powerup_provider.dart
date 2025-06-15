@@ -73,7 +73,7 @@ class PowerupProvider extends ChangeNotifier {
   Future<void> initialize(String lobbyId) async {
     if (_currentLobbyId == lobbyId && _isInitialized) return;
 
-    await dispose();
+    await _resetState();
 
     _currentLobbyId = lobbyId;
     _currentPlayerId = FirebaseAuth.instance.currentUser?.uid;
@@ -88,6 +88,20 @@ class PowerupProvider extends ChangeNotifier {
           if (!const MapEquality().equals(newSpawnsMap, _powerupSpawns)) {
             final newSpawns = spawns.where((spawn) => !_powerupSpawns.containsKey(spawn.id)).toList();
             _powerupSpawns = newSpawnsMap;
+
+            // ✅ FIX: ADD THIS LOGIC TO REMOVE CLAIMED POWERUPS
+            // When a powerup is claimed by anyone, remove its position from the local cache.
+            // This prevents the UI from trying to render it.
+            _localPowerupPositions.removeWhere((powerupId, position) {
+              final spawn = _powerupSpawns[powerupId];
+              // Remove if the spawn doesn't exist anymore OR if it has been claimed.
+              if (spawn == null || spawn.claimedBy != null) {
+                print('🧹 Cleaning up local position for claimed powerup: $powerupId');
+                return true;
+              }
+              return false;
+            });
+
             if (newSpawns.isNotEmpty && _sudokuProviderCallback != null) {
               Future.delayed(const Duration(milliseconds: 100), () {
                 _triggerPositionUpdate();
@@ -307,31 +321,32 @@ class PowerupProvider extends ChangeNotifier {
   /// 🔥 UPDATED: Get powerup at specific position using local positions
   PowerupSpawn? getPowerupAt(int row, int col) {
     try {
-      // Look through local positions to find powerup at this location
-      for (final entry in _localPowerupPositions.entries) {
-        final powerupId = entry.key;
-        final position = entry.value;
+      // Find the ID of the powerup at the target position.
+      final entry = _localPowerupPositions.entries.firstWhere(
+            (entry) => entry.value['row'] == row && entry.value['col'] == col,
+      );
 
-        if (position['row'] == row && position['col'] == col) {
-          // Find the corresponding spawn
-          try {
-            return _powerupSpawns.values.where((spawn) =>
-            spawn.id == powerupId && spawn.claimedBy == null
-            ).first;
-          } catch (e) {
-            // No matching spawn found
-            return null;
-          }
-        }
+      // Use the found ID to directly look up the PowerupSpawn object from our main map.
+      final powerupId = entry.key;
+      final spawn = _powerupSpawns[powerupId];
+
+      // Return the spawn only if it exists and hasn't been claimed yet.
+      if (spawn != null && spawn.claimedBy == null) {
+        return spawn;
       }
+
       return null;
+
     } catch (e) {
+      // This will happen if .firstWhere finds no match. It's safe to return null.
       return null;
     }
   }
 
   /// 🔥 UPDATED: Check if there's a powerup at position using local positions
   bool hasPowerupAt(int row, int col) {
+    // ✅ FIX: This now uses the same logic as the getPowerupAt method,
+    // ensuring it correctly checks if the powerup is still available (not claimed).
     return getPowerupAt(row, col) != null;
   }
 
@@ -457,6 +472,12 @@ class PowerupProvider extends ChangeNotifier {
 
   void updatePositionsWithCurrentBoard(List<List<int?>> board, List<List<bool>> givenCells) {
     print('🎯 Updating powerup positions with current board state');
+
+    if (!_isInitialized) {
+      print("DEBUG: updatePositionsWithCurrentBoard exited because provider is not initialized.");
+      return;
+    }
+
     updatePowerupPositions(board, givenCells);
 
     print('📍 Calculated positions:');
@@ -469,10 +490,12 @@ class PowerupProvider extends ChangeNotifier {
       }
     });
 
+    // 🔥 FIX: Only call notifyListeners ONCE, and don't trigger SudokuProvider
     notifyListeners();
-    _triggerSudokuProviderUpdate();
-  }
 
+    // 🔥 REMOVED: Don't trigger SudokuProvider update - it causes double notifications
+    // _triggerSudokuProviderUpdate();
+  }
   void _triggerPositionUpdate() {
     print('🎯 Triggering position update for ${_powerupSpawns.length} spawns');
     _sudokuProviderCallback?.call('updatePowerupPositions');
@@ -487,26 +510,33 @@ class PowerupProvider extends ChangeNotifier {
 
 
   @override
-  Future<void> dispose() async {
-    print('🧹 Disposing PowerupProvider');
+  void dispose() {
+    print('🧹 Disposing PowerupProvider for good.');
+    _resetState();
+    super.dispose();
+  }
 
+  Future<void> _resetState() async {
+    print('🔄 Resetting PowerupProvider state...');
+
+    // Cancel all active subscriptions and timers
     _spawnsSubscription?.cancel();
     _powerupsSubscription?.cancel();
     _effectsSubscription?.cancel();
     _cleanupTimer?.cancel();
     _spawnCheckTimer?.cancel();
 
+    // Clear all local data
     _powerupSpawns.clear();
     _playerPowerups.clear();
     _activeEffects.clear();
     _localPowerupPositions.clear();
 
+    // Reset all state variables
     _isInitialized = false;
     _currentLobbyId = null;
     _currentPlayerId = null;
     _gameStartTime = 0;
     _sudokuProviderCallback = null;
-
-    super.dispose();
   }
 }

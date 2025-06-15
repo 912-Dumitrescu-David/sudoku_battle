@@ -391,6 +391,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
                 _handleGameEnd(sudokuProvider.isGameWon ?? false, sudokuProvider);
               }
             }
+            _updateMyProgress();
           });
 
           if (!_gameStarted) {
@@ -740,6 +741,27 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
       }
     }
     return count > 0 ? count : 45;
+  }
+
+  void _updateMyProgress() {
+    if (_gameEnded || !mounted) return;
+
+    final provider = context.read<SudokuProvider>();
+    final totalToSolve = _calculateTotalToSolve();
+
+    // Only send updates if progress has changed to avoid unnecessary writes
+    final newProgress = (totalToSolve > 0) ? provider.solved / totalToSolve : 0.0;
+    if ((newProgress - _lastProgress).abs() > 0.001) { // Check for meaningful change
+      _lastProgress = newProgress;
+      GameStateService.updatePlayerGameStatus(
+        widget.lobby.id,
+        isCompleted: false, // It's just a progress update, not completion
+        completionTime: _formattedTime,
+        solvedCells: provider.solved,
+        totalCells: totalToSolve,
+        mistakes: provider.mistakesCount,
+      );
+    }
   }
 
   Widget _buildHintButton() {

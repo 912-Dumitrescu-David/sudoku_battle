@@ -80,11 +80,12 @@ class SudokuProvider extends ChangeNotifier {
 
     // 🔥 CRITICAL FIX: Set up callback to handle position updates
     _powerupProvider!.setSudokuProviderCallback((effectType) {
-      print('🔗 SudokuProvider received effect: $effectType');
+      print("DEBUG: SudokuProvider callback received effect: '$effectType'");
 
       if (effectType == 'updatePowerupPositions') {
         // 🎯 AUTO-CALCULATE positions when new powerups spawn
         _powerupProvider!.updatePositionsWithCurrentBoard(_board, _givenCells);
+        notifyListeners();
       } else {
         // Handle other powerup effects
         _handlePowerupEffect(effectType);
@@ -107,9 +108,6 @@ class SudokuProvider extends ChangeNotifier {
       case 'updatePowerupPositions':
       // 🎯 AUTO-CALCULATE positions when new powerups spawn
         _powerupProvider!.updatePositionsWithCurrentBoard(_board, _givenCells);
-
-        // 🔥 CRITICAL: Force UI update after position calculation
-        notifyListeners();
         break;
 
       case 'forceUIUpdate':
@@ -341,6 +339,14 @@ class SudokuProvider extends ChangeNotifier {
           LobbyService.sendCoOpMove(_lobbyId!, row, col, number);
         }
       }
+
+      if (_isPowerupMode && _powerupProvider != null) {
+        print('🔄 Recalculating powerup positions after move...');
+        Future.microtask(() {
+          _powerupProvider!.updatePositionsWithCurrentBoard(_board, _givenCells);
+        });
+      }
+
       _internalCheckEndGameConditions();
 
       notifyListeners();
@@ -522,6 +528,10 @@ class SudokuProvider extends ChangeNotifier {
     // Check if the cell was previously empty/wrong and update solved count
     // (This logic can be simplified or adjusted as needed for hints)
     solvedCells++;
+
+    if (_isPowerupMode) {
+      _powerupProvider?.attemptClaimPowerup(row, col);
+    }
 
     // 2. If in co-op mode, broadcast this hint as a move to the other player
     if (_currentGameMode == GameMode.coop && _lobbyId != null) {
