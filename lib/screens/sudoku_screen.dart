@@ -1,4 +1,4 @@
-// screens/sudoku_screen.dart - FIXED VERSION (No powerups in single player)
+// screens/sudoku_screen.dart - UPDATED VERSION with consistent layout
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -15,6 +15,7 @@ import 'package:sudoku_battle/widgets/mistake_counter.dart';
 import 'package:sudoku_battle/widgets/timer.dart';
 import 'package:sudoku_battle/widgets/correct_counter.dart';
 import 'package:sudoku_battle/widgets/hint_widget.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class SudokuScreen extends StatefulWidget {
   final String difficulty;
@@ -40,6 +41,7 @@ class _SudokuScreenState extends State<SudokuScreen> {
   late Stopwatch _stopwatch;
   late Timer _timer;
   String _formattedTime = "00:00";
+  late Offset _hintButtonOffset;
 
   @override
   void initState() {
@@ -58,6 +60,12 @@ class _SudokuScreenState extends State<SudokuScreen> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Initialize hint button position
+      final screenWidth = MediaQuery.of(context).size.width;
+      setState(() {
+        _hintButtonOffset = Offset(screenWidth * 0.85, 130);
+      });
+
       // Create game settings using the parameters passed from difficulty screen
       final gameSettings = GameSettings(
         timeLimit: null,
@@ -114,6 +122,41 @@ class _SudokuScreenState extends State<SudokuScreen> {
     sudokuProvider.resetMistakes();
     sudokuProvider.resetSolvedCells();
     sudokuProvider.resetHints();
+  }
+
+  Widget _buildHintButton() {
+    return Consumer<SudokuProvider>(
+      builder: (context, provider, child) {
+        final canUseHint = provider.canUseHint();
+        final hintsRemaining = provider.hintsRemaining;
+
+        return GestureDetector(
+          onTap: canUseHint ? () => provider.useHint() : null,
+          child: Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: canUseHint ? Colors.amber[600] : Colors.grey[300],
+              boxShadow: const [
+                BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(2, 2)),
+              ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.lightbulb, size: 20, color: canUseHint ? Colors.white : Colors.grey[600]),
+                const SizedBox(height: 4),
+                Text(
+                  '$hintsRemaining',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: canUseHint ? Colors.white : Colors.grey[700]),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -173,41 +216,102 @@ class _SudokuScreenState extends State<SudokuScreen> {
             });
           }
 
-          return Column(
+          return Stack(
             children: [
-              // Game stats row
-              SudokuMistakesCounter(
-                mistakes: provider.mistakesCount,
-                maxMistakes: provider.maxMistakes,
-              ),
-              SudokuTimerDisplay(
-                time: _formattedTime,
-              ),
-              SudokuCorrectCounter(
-                solved: provider.solved,
-                totalToSolve: widget.emptyCells,
+              // Main content
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWeb = kIsWeb;
+                  final statsHeight = 60.0;
+                  final keypadHeight = isWeb ? 120.0 : 100.0;
+
+                  return Column(
+                    children: [
+                      // Game stats row (same as multiplayer)
+                      Container(
+                        height: statsHeight,
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: FractionallySizedBox(
+                          widthFactor: 0.9,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              // Mistakes counter
+                              SizedBox(
+                                width: 80,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: SudokuMistakesCounter(
+                                    mistakes: provider.mistakesCount,
+                                    maxMistakes: provider.maxMistakes,
+                                  ),
+                                ),
+                              ),
+
+                              // Timer in the center
+                              SudokuTimerDisplay(
+                                time: _formattedTime,
+                              ),
+
+                              // Correct counter
+                              SizedBox(
+                                width: 80,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: SudokuCorrectCounter(
+                                    solved: provider.solved,
+                                    totalToSolve: widget.emptyCells,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Sudoku board (expanded to fill available space)
+                      Expanded(
+                        child: const Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: SudokuBoard(),
+                        ),
+                      ),
+
+                      // Divider
+                      const Divider(),
+
+                      // Number keypad
+                      SizedBox(
+                        height: keypadHeight,
+                        child: const NumberKeypad(),
+                      ),
+                    ],
+                  );
+                },
               ),
 
-              // Hint widget (only show if hints are enabled)
+              // Floating hint button (only show if hints are enabled)
               if (widget.allowHints && provider.hintsRemaining > 0)
-                SudokuHintWidget(),
-
-              // Sudoku board
-              Expanded(
-                flex: 4,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: SudokuBoard(),
+                Positioned(
+                  left: _hintButtonOffset.dx,
+                  top: _hintButtonOffset.dy,
+                  child: Draggable(
+                    feedback: _buildHintButton(),
+                    childWhenDragging: Opacity(
+                      opacity: 0.4,
+                      child: _buildHintButton(),
+                    ),
+                    onDragEnd: (details) {
+                      setState(() {
+                        _hintButtonOffset = Offset(
+                          details.offset.dx.clamp(0, MediaQuery.of(context).size.width - 60),
+                          details.offset.dy.clamp(0, MediaQuery.of(context).size.height - 60),
+                        );
+                      });
+                    },
+                    child: _buildHintButton(),
+                  ),
                 ),
-              ),
-
-              const Divider(),
-
-              // Number keypad
-              Expanded(
-                flex: 1,
-                child: const NumberKeypad(),
-              ),
             ],
           );
         },
