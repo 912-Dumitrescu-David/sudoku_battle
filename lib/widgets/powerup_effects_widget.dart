@@ -1,11 +1,9 @@
-// widgets/powerup_effects_widget.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/powerup_model.dart';
 import '../providers/powerup_provider.dart';
 import '../utils/powerup_utils.dart';
 
-/// Widget to show active powerup effects
 class PowerupEffectsDisplay extends StatelessWidget {
   const PowerupEffectsDisplay({Key? key}) : super(key: key);
 
@@ -32,7 +30,6 @@ class PowerupEffectsDisplay extends StatelessWidget {
   }
 }
 
-/// Individual powerup effect chip
 class PowerupEffectChip extends StatefulWidget {
   final PowerupEffect effect;
 

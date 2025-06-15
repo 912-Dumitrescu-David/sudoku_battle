@@ -22,17 +22,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // 🔥 Add observer to detect app resume
+    WidgetsBinding.instance.addObserver(this);
     _loadPlayerRating();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // 🔥 Remove observer
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  // 🔥 Detect when app resumes (when user returns from result screen)
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -47,7 +46,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (user != null) {
         print('🔄 Loading player rating for: ${user.uid}');
 
-        // Force refresh from server to get latest rating
         final userDoc = await FirebaseFirestore.instanceFor(
           app: Firebase.app(),
           databaseId: 'lobbies',
@@ -64,7 +62,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     } catch (e) {
       print('Error loading rating: $e');
-      // Fallback to cache if server fails
       try {
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
@@ -131,18 +128,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Welcome message
               Text(
                 'Hello, $displayName!',
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               ),
 
-              // Rating display with refresh button
               if (_currentRating != null) ...[
                 SizedBox(height: 8),
                 GestureDetector(
                   onTap: () {
-                    // 🔥 Allow manual refresh by tapping rating
                     print('🔄 Manual rating refresh triggered');
                     _loadPlayerRating();
                   },
@@ -166,7 +160,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                         ),
                         SizedBox(width: 4),
-                        Icon(Icons.refresh, color: Colors.purple, size: 16), // 🔥 Hint that it's tappable
+                        Icon(Icons.refresh, color: Colors.purple, size: 16),
                       ],
                     ),
                   ),
@@ -291,14 +285,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _goToRankedQueue(BuildContext context) async {
-    // 🔥 Refresh rating when going to ranked queue
     await _loadPlayerRating();
     if (mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const RankedQueueScreen()),
       ).then((_) {
-        // 🔥 Refresh rating when returning from ranked queue
         _loadPlayerRating();
       });
     }

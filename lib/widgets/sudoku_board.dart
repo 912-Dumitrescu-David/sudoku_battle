@@ -1,13 +1,11 @@
-// widgets/sudoku_board.dart - MODIFIED FOR CO-OP
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // CO-OP: Needed for user ID check
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sudoku_battle/widgets/powerup_ui_widget.dart';
 import '../providers/sudoku_provider.dart';
 import '../providers/powerup_provider.dart';
 import '../models/powerup_model.dart';
-import '../models/lobby_model.dart'; // CO-OP: To get GameMode enum
-
+import '../models/lobby_model.dart';
 class SudokuBoard extends StatelessWidget {
   const SudokuBoard({Key? key}) : super(key: key);
 
@@ -46,7 +44,6 @@ class SudokuBoard extends StatelessWidget {
                     child: Container(
                       decoration: BoxDecoration(
                         border: _getCellBorder(context, row, col),
-                        // CO-OP: Color logic is now inside this method
                         color: _getCellColor(
                           context,
                           row, // Pass row
@@ -106,36 +103,27 @@ class SudokuBoard extends StatelessWidget {
     );
   }
 
-  // CO-OP: Modified this method to handle co-op coloring
   Color _getCellColor(BuildContext context, int row, int col) {
     final sudokuProvider = context.read<SudokuProvider>();
     final theme = Theme.of(context);
     final isSelected = sudokuProvider.selectedRow == row && sudokuProvider.selectedCol == col;
     final isError = sudokuProvider.errorCells[row][col];
 
-    // --- COLORING LOGIC (REORDERED) ---
-
-    // 1. Always show errors in red, this has top priority.
     if (isError) {
       return theme.colorScheme.error.withOpacity(0.3);
     }
 
-    // 2. If the cell is selected, highlight it. This should be high priority.
     if (isSelected) {
       return theme.colorScheme.primary.withOpacity(0.2);
     }
 
-    // 3. 🔥 ADD THIS BLOCK TO RENDER THE POWERUP COLOR
-    // Check for powerups BEFORE co-op colors so they are visible.
     if (sudokuProvider.isPowerupModeEnabled) {
       Color? powerupColor = sudokuProvider.getPowerupColor(row, col);
       if (powerupColor != null) {
-        // Return the powerup color with some opacity so it's not too harsh.
         return powerupColor.withOpacity(0.4);
       }
     }
 
-    // 4. If it's a co-op game, show player-specific colors for non-powerup cells
     if (sudokuProvider.currentGameMode == GameMode.coop) {
       final localPlayerId = FirebaseAuth.instance.currentUser?.uid;
       final cellPlayerId = sudokuProvider.playerCellEntries[row][col];
@@ -146,13 +134,9 @@ class SudokuBoard extends StatelessWidget {
       }
     }
 
-    // 5. Default background color if no other condition is met
     return theme.colorScheme.surface;
   }
 
-
-
-  /// Build powerup indicator widget
   Widget _buildPowerupIndicatorSafe(powerupSpawn) {
     Color powerupColor = _getColorForPowerupType(powerupSpawn.type);
 
@@ -180,7 +164,6 @@ class SudokuBoard extends StatelessWidget {
     );
   }
 
-  /// 🔥 NEW: Build solution overlay for individual cell
   Widget _buildSolutionCellOverlay(int solutionNumber) {
     return Positioned.fill(
       child: Container(
@@ -209,7 +192,6 @@ class SudokuBoard extends StatelessWidget {
     );
   }
 
-  /// Safe color mapping for powerup types
   Color _getColorForPowerupType(PowerupType type) {
     switch (type) {
       case PowerupType.revealTwoCells:
@@ -233,7 +215,6 @@ class SudokuBoard extends StatelessWidget {
     }
   }
 
-  /// Safe icon mapping for powerup types
   String _getIconForPowerupType(PowerupType type) {
     switch (type) {
       case PowerupType.revealTwoCells:
@@ -257,7 +238,6 @@ class SudokuBoard extends StatelessWidget {
     }
   }
 
-  /// Safe powerup color getter
   Color? _getPowerupColorSafe(PowerupProvider powerupProvider, int row, int col) {
     final powerup = powerupProvider.getPowerupAt(row, col);
     if (powerup == null) return null;

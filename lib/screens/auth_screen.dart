@@ -18,7 +18,6 @@ class _AuthPageState extends State<AuthScreen> {
   String error = '';
 
   Future<void> signInOrUp() async {
-    // This function remains unchanged
     try {
       if (isLogin) {
         await FirebaseAuth.instance.signInWithEmailAndPassword(
@@ -39,7 +38,6 @@ class _AuthPageState extends State<AuthScreen> {
   }
 
   Widget _buildWelcomeTitle() {
-    // This helper widget remains unchanged
     final theme = Theme.of(context);
     final isLightTheme = theme.brightness == Brightness.light;
 
@@ -104,8 +102,6 @@ class _AuthPageState extends State<AuthScreen> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        // FIX: Wrap the Column with a SingleChildScrollView
-        // This makes the content scrollable when the keyboard appears.
         child: SingleChildScrollView(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,

@@ -22,7 +22,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
   StreamSubscription? _queueSubscription;
   Timer? _matchmakingTimer;
   Timer? _searchRadiusTimer;
-  Timer? _maxTimeTimer; // 🔥 NEW: Timer for max queue time
+  Timer? _maxTimeTimer;
   late AnimationController _pulseController;
   late AnimationController _progressController;
 
@@ -31,11 +31,9 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
   int _secondsInQueue = 0;
   int? _currentRating;
 
-  // 🔥 NEW: Cache leaderboard data to prevent constant refreshing
   List<PlayerRank>? _cachedLeaderboard;
   bool _leaderboardLoaded = false;
 
-  // 🔥 NEW: Queue limits
   static const int MAX_QUEUE_TIME_SECONDS = 180; // 3 minutes
   static const int MAX_SEARCH_RADIUS = 600; // Max rating difference
   static const int INITIAL_SEARCH_RADIUS = 100; // Starting search radius
@@ -47,7 +45,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // 🔥 FORCE CLEANUP any stale lobby state when entering ranked queue
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final lobbyProvider = context.read<LobbyProvider>();
       lobbyProvider.forceCleanupLobbyState();
@@ -59,12 +56,12 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     );
 
     _progressController = AnimationController(
-      duration: const Duration(seconds: MAX_QUEUE_TIME_SECONDS), // 🔥 Use max time for progress
+      duration: const Duration(seconds: MAX_QUEUE_TIME_SECONDS),
       vsync: this,
     );
 
     _loadCurrentRating();
-    _loadLeaderboard(); // 🔥 Load leaderboard once at start
+    _loadLeaderboard();
     _listenToQueue();
   }
 
@@ -74,7 +71,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     _queueSubscription?.cancel();
     _matchmakingTimer?.cancel();
     _searchRadiusTimer?.cancel();
-    _maxTimeTimer?.cancel(); // 🔥 NEW: Cancel max time timer
+    _maxTimeTimer?.cancel();
     _pulseController.dispose();
     _progressController.dispose();
     super.dispose();
@@ -152,7 +149,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
   }
 
   void _startSearchTimers() {
-    // Timer for updating search duration
     _matchmakingTimer?.cancel();
     _matchmakingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
@@ -160,7 +156,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
       });
     });
 
-    // 🔥 NEW: Max time timer - auto-leave queue after 3 minutes
     _maxTimeTimer?.cancel();
     _maxTimeTimer = Timer(const Duration(seconds: MAX_QUEUE_TIME_SECONDS), () {
       if (_isInQueue) {
@@ -169,15 +164,11 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
       }
     });
 
-    // 🔥 FIXED: Timer for search radius expansion every 20 seconds (not every search attempt)
     _searchRadiusTimer?.cancel();
     _searchRadiusTimer = Timer.periodic(const Duration(seconds: RADIUS_EXPANSION_INTERVAL), (timer) {
       print('⏰ 20 seconds passed, triggering radius expansion timer...');
-      // The expansion will happen in the next findRankedMatch call
-      // We don't need to do anything here - just let the next search attempt handle it
     });
 
-    // Start animations
     _pulseController.repeat();
     _progressController.forward();
   }
@@ -185,24 +176,21 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
   void _stopSearchTimers() {
     _matchmakingTimer?.cancel();
     _searchRadiusTimer?.cancel();
-    _maxTimeTimer?.cancel(); // 🔥 NEW: Cancel max time timer
+    _maxTimeTimer?.cancel();
     _pulseController.stop();
     _progressController.stop();
-    _progressController.reset(); // Reset progress bar
+    _progressController.reset();
     setState(() {
       _secondsInQueue = 0;
     });
   }
 
-  // 🔥 NEW: Handle queue timeout
   void _handleQueueTimeout() async {
     _stopSearchTimers();
 
-    // Leave queue
     await RankingService.leaveRankedQueue();
 
     if (mounted) {
-      // Show timeout dialog
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
@@ -243,7 +231,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     }
   }
 
-  // 🔥 NEW: Rejoin queue after timeout
   void _rejoinQueue() {
     _joinQueue();
   }
@@ -391,7 +378,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
             ),
         ],
       ),
-      // ✅ MODIFIED: Wrapped body in a SingleChildScrollView to prevent vertical overflow
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -402,7 +388,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
               _buildActionButton(),
               const SizedBox(height: 24),
               _buildInfoCards(),
-              const SizedBox(height: 24), // ✅ MODIFIED: Replaced Spacer with SizedBox
+              const SizedBox(height: 24),
               _buildLeaderboardPreview(),
             ],
           ),
@@ -442,9 +428,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
                 ),
               ),
               const SizedBox(height: 8),
-              // 🔥 NEW: Show time remaining instead of just elapsed
               Text(_formatSearchTime(_secondsInQueue)),
-              // 🔥 NEW: Show warning when approaching timeout
               if (_secondsInQueue > MAX_QUEUE_TIME_SECONDS - 30) ...[
                 const SizedBox(height: 4),
                 Text(
@@ -459,7 +443,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
               if (_queueStatus != null) ...[
                 _buildSearchInfo(),
                 const SizedBox(height: 16),
-                // 🔥 NEW: Progress bar showing time until timeout
                 _buildTimeoutProgressBar(),
               ],
             ] else ...[
@@ -515,7 +498,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     );
   }
 
-  // 🔥 NEW: Timeout progress bar
   Widget _buildTimeoutProgressBar() {
     return Column(
       children: [
@@ -555,14 +537,11 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
   Widget _buildSearchInfo() {
     final rating = _currentRating ?? _queueStatus?.rating ?? 1000;
 
-    // 🔥 FIXED: Calculate actual current search radius based on time in queue
     int actualSearchRadius = INITIAL_SEARCH_RADIUS;
 
     if (_queueStatus != null) {
-      // Use the radius from queue status if available
       actualSearchRadius = _queueStatus!.searchRadius;
     } else {
-      // Fallback: calculate based on time in queue
       final expansions = (_secondsInQueue / RADIUS_EXPANSION_INTERVAL).floor();
       actualSearchRadius = (INITIAL_SEARCH_RADIUS + (expansions * RADIUS_EXPANSION_AMOUNT))
           .clamp(INITIAL_SEARCH_RADIUS, MAX_SEARCH_RADIUS);
@@ -603,7 +582,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
             ],
           ),
           const SizedBox(height: 4),
-          // 🔥 Show current radius and expansion info
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -621,7 +599,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
               ),
             ],
           ),
-          // 🔥 Show radius expansion status
           if (actualSearchRadius >= MAX_SEARCH_RADIUS) ...[
             const SizedBox(height: 4),
             const Row(
@@ -674,7 +651,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     );
   }
 
-  // ✅ NEW: Helper widget to build the individual info cards, reducing code duplication.
   Widget _buildSingleInfoCard({
     required IconData icon,
     required Color color,
@@ -711,12 +687,10 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     );
   }
 
-  // ✅ MODIFIED: Replaced Row with Wrap for better responsiveness.
   Widget _buildInfoCards() {
-    // This will now wrap cards to the next line on smaller screens.
     return Wrap(
-      spacing: 8.0, // Horizontal space between cards
-      runSpacing: 8.0, // Vertical space between cards when they wrap
+      spacing: 8.0,
+      runSpacing: 8.0,
       alignment: WrapAlignment.center,
       children: <Widget>[
         _buildSingleInfoCard(
@@ -765,7 +739,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
                 ),
                 Row(
                   children: [
-                    // 🔥 NEW: Refresh button for manual refresh
                     IconButton(
                       icon: const Icon(Icons.refresh, size: 18),
                       onPressed: () {
@@ -793,7 +766,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
               ],
             ),
             const SizedBox(height: 8),
-            // 🔥 FIXED: Use cached data instead of FutureBuilder
             _buildLeaderboardContent(),
           ],
         ),
@@ -801,10 +773,8 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     );
   }
 
-  // 🔥 NEW: Build leaderboard content from cached data
   Widget _buildLeaderboardContent() {
     if (!_leaderboardLoaded) {
-      // Still loading
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(16),
@@ -814,7 +784,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     }
 
     if (_cachedLeaderboard == null || _cachedLeaderboard!.isEmpty) {
-      // No data or empty
       return Padding(
         padding: const EdgeInsets.all(16),
         child: Text(
@@ -825,7 +794,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
       );
     }
 
-    // Show cached leaderboard
     return Column(
       children: _cachedLeaderboard!.map((player) =>
           _buildLeaderboardItem(player)).toList(),
@@ -887,9 +855,8 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     }
   }
 
-  // 🔥 NEW: Load leaderboard once and cache it
   Future<void> _loadLeaderboard() async {
-    if (_leaderboardLoaded) return; // Don't reload if already loaded
+    if (_leaderboardLoaded) return;
 
     try {
       print('📊 Loading leaderboard (one time)...');
@@ -904,7 +871,6 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
       }
     } catch (e) {
       print('❌ Error loading leaderboard: $e');
-      // Set empty list so we don't keep trying
       if (mounted) {
         setState(() {
           _cachedLeaderboard = [];

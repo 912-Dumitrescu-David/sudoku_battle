@@ -1,11 +1,10 @@
-// widgets/game_timer_widget.dart (UPDATED VERSION)
 import 'dart:async';
 import 'package:flutter/material.dart';
 
 class GameTimerWidget extends StatefulWidget {
-  final int? timeLimitSeconds; // null = no limit
+  final int? timeLimitSeconds;
   final bool isGameActive;
-  final int bonusSeconds; // Add bonus seconds parameter
+  final int bonusSeconds;
   final VoidCallback? onTimeUp;
   final Function(String)? onTimeUpdate;
 
@@ -13,7 +12,7 @@ class GameTimerWidget extends StatefulWidget {
     Key? key,
     this.timeLimitSeconds,
     required this.isGameActive,
-    this.bonusSeconds = 0, // Default to 0
+    this.bonusSeconds = 0,
     this.onTimeUp,
     this.onTimeUpdate,
   }) : super(key: key);
@@ -41,10 +40,8 @@ class _GameTimerWidgetState extends State<GameTimerWidget> {
           _updateFormattedTime();
         });
 
-        // Notify parent of time update
         widget.onTimeUpdate?.call(_formattedTime);
 
-        // Check if time limit reached (including bonus time)
         if (widget.timeLimitSeconds != null &&
             _elapsedSeconds >= (widget.timeLimitSeconds! + widget.bonusSeconds)) {
           timer.cancel();
@@ -56,7 +53,6 @@ class _GameTimerWidgetState extends State<GameTimerWidget> {
 
   void _updateFormattedTime() {
     if (widget.timeLimitSeconds != null) {
-      // Countdown mode (including bonus time)
       final totalTime = widget.timeLimitSeconds! + widget.bonusSeconds;
       final remaining = totalTime - _elapsedSeconds;
       if (remaining <= 0) {
@@ -67,7 +63,6 @@ class _GameTimerWidgetState extends State<GameTimerWidget> {
         _formattedTime = '$minutes:$seconds';
       }
     } else {
-      // Count up mode
       final minutes = (_elapsedSeconds ~/ 60).toString().padLeft(2, '0');
       final seconds = (_elapsedSeconds % 60).toString().padLeft(2, '0');
       _formattedTime = '$minutes:$seconds';
@@ -121,7 +116,6 @@ class _GameTimerWidgetState extends State<GameTimerWidget> {
                     color: isLowTime ? Colors.red : Colors.blue,
                   ),
                 ),
-                // Show bonus time indicator if there's bonus time
                 if (widget.bonusSeconds > 0) ...[
                   SizedBox(width: 4),
                   Text(

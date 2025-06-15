@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/ranking_service.dart';
 
-// MODIFIED: This screen is now simplified to only show the global leaderboard.
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({Key? key}) : super(key: key);
 
@@ -11,7 +10,6 @@ class LeaderboardScreen extends StatefulWidget {
 }
 
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
-  // REMOVED: TabController and state variables for "My Rank" are no longer needed.
 
   @override
   Widget build(BuildContext context) {
@@ -20,15 +18,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         title: Text('Global Leaderboard'),
         backgroundColor: Colors.purple,
         foregroundColor: Colors.white,
-        // REMOVED: The TabBar at the bottom of the AppBar is gone.
       ),
-      // MODIFIED: The body is now directly the global leaderboard widget.
       body: _buildGlobalLeaderboard(),
     );
   }
 
-  // NEW HELPER WIDGET to build robust CircleAvatars with an error fallback.
-  // This remains from the previous version to handle image loading safely.
   Widget _buildPlayerAvatar({
     String? avatarUrl,
     required String playerName,
@@ -51,7 +45,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       return fallbackChild;
     }
 
-    // Using a ClipOval to ensure the Image respects the CircleAvatar's shape.
     return CircleAvatar(
       radius: radius,
       backgroundColor: Colors.grey.shade200,

@@ -1,7 +1,5 @@
-// widgets/powerup_overlays_widget.dart - FIXED VERSION
 import 'package:flutter/material.dart';
 
-/// 🔥 FIXED: Widget to show freeze overlay - centered and non-disruptive
 class FreezeOverlay extends StatefulWidget {
   final int remainingSeconds;
 
@@ -42,7 +40,7 @@ class _FreezeOverlayState extends State<FreezeOverlay>
   Widget build(BuildContext context) {
     return Positioned.fill(
       child: Container(
-        color: Colors.blue.withOpacity(0.1), // 🔥 FIXED: Much lighter overlay
+        color: Colors.blue.withOpacity(0.1),
         child: Center(
           child: AnimatedBuilder(
             animation: _scaleAnimation,
@@ -99,7 +97,6 @@ class _FreezeOverlayState extends State<FreezeOverlay>
   }
 }
 
-/// Widget to show solution overlay
 class SolutionOverlay extends StatefulWidget {
   final int remainingSeconds;
   final List<List<int>> solution;

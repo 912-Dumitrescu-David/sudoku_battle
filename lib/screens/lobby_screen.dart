@@ -35,7 +35,6 @@ class _LobbyScreenState extends State<LobbyScreen> {
     final existingLobby = await lobbyProvider.getCurrentUserLobby();
 
     if (existingLobby != null && mounted) {
-      // Navigate to lobby detail screen
       Navigator.pushNamed(context, '/lobby-detail', arguments: existingLobby.id);
     }
   }
@@ -320,9 +319,8 @@ class _LobbyScreenState extends State<LobbyScreen> {
       builder: (context) => JoinPrivateLobbyDialog(
         onJoined: (lobbyId) async {
           print('🔗 Dialog onJoined called with lobby ID: $lobbyId');
-          Navigator.pop(context); // Close dialog first
+          Navigator.pop(context);
 
-          // Small delay to ensure dialog is closed
           await Future.delayed(Duration(milliseconds: 300));
 
           if (mounted) {

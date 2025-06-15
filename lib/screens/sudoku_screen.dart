@@ -1,4 +1,3 @@
-// screens/sudoku_screen.dart - UPDATED VERSION with consistent layout
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -60,28 +59,25 @@ class _SudokuScreenState extends State<SudokuScreen> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Initialize hint button position
       final screenWidth = MediaQuery.of(context).size.width;
       setState(() {
         _hintButtonOffset = Offset(screenWidth * 0.85, 130);
       });
 
-      // Create game settings using the parameters passed from difficulty screen
+
       final gameSettings = GameSettings(
         timeLimit: null,
-        // No time limit for classic mode
         allowHints: widget.allowHints,
         allowMistakes: widget.allowMistakes,
         maxMistakes: widget.maxMistakes,
         difficulty: widget.difficulty.toLowerCase(),
       );
 
-      // 🔥 FIXED: Pass GameMode.classic to ensure no powerups in single player
       Provider.of<SudokuProvider>(context, listen: false)
           .generatePuzzle(
         emptyCells: widget.emptyCells,
         gameSettings: gameSettings,
-        gameMode: GameMode.classic, // 🔥 Explicitly set to classic mode
+        gameMode: GameMode.classic,
       );
     });
   }
@@ -101,7 +97,6 @@ class _SudokuScreenState extends State<SudokuScreen> {
   void _resetGame() {
     final sudokuProvider = Provider.of<SudokuProvider>(context, listen: false);
 
-    // Create game settings using the current widget parameters
     final gameSettings = GameSettings(
       timeLimit: null,
       allowHints: widget.allowHints,
@@ -110,11 +105,10 @@ class _SudokuScreenState extends State<SudokuScreen> {
       difficulty: widget.difficulty.toLowerCase(),
     );
 
-    // 🔥 FIXED: Pass GameMode.classic to ensure no powerups
     sudokuProvider.generatePuzzle(
       emptyCells: widget.emptyCells,
       gameSettings: gameSettings,
-      gameMode: GameMode.classic, // 🔥 Explicitly set to classic mode
+      gameMode: GameMode.classic,
     );
 
     _stopwatch.reset();
@@ -181,7 +175,6 @@ class _SudokuScreenState extends State<SudokuScreen> {
       ),
       body: Consumer<SudokuProvider>(
         builder: (context, provider, child) {
-          // 🔥 FIXED: Debug check to ensure powerups are disabled
           print('🔍 Single player mode - Powerups enabled: ${provider
               .isPowerupModeEnabled}');
 
@@ -227,7 +220,6 @@ class _SudokuScreenState extends State<SudokuScreen> {
 
                   return Column(
                     children: [
-                      // Game stats row (same as multiplayer)
                       Container(
                         height: statsHeight,
                         padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -236,7 +228,6 @@ class _SudokuScreenState extends State<SudokuScreen> {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              // Mistakes counter
                               SizedBox(
                                 width: 80,
                                 child: FittedBox(
@@ -248,7 +239,6 @@ class _SudokuScreenState extends State<SudokuScreen> {
                                 ),
                               ),
 
-                              // Timer in the center
                               SudokuTimerDisplay(
                                 time: _formattedTime,
                               ),
@@ -269,7 +259,6 @@ class _SudokuScreenState extends State<SudokuScreen> {
                         ),
                       ),
 
-                      // Sudoku board (expanded to fill available space)
                       Expanded(
                         child: const Padding(
                           padding: EdgeInsets.all(8.0),
@@ -277,7 +266,6 @@ class _SudokuScreenState extends State<SudokuScreen> {
                         ),
                       ),
 
-                      // Divider
                       const Divider(),
 
                       // Number keypad
@@ -290,7 +278,7 @@ class _SudokuScreenState extends State<SudokuScreen> {
                 },
               ),
 
-              // Floating hint button (only show if hints are enabled)
+              // Floating hint button
               if (widget.allowHints && provider.hintsRemaining > 0)
                 Positioned(
                   left: _hintButtonOffset.dx,

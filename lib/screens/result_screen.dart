@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 
 class ResultScreen extends StatelessWidget {
-  final bool isWin; // true for win, false for fail
+  final bool isWin;
   final String time;
   final int solvedBlocks;
   final int totalToSolve;

@@ -1,7 +1,5 @@
-// widgets/bomb_effect_widget.dart
 import 'package:flutter/material.dart';
 
-/// Widget to show bomb explosion effect
 class BombExplosionOverlay extends StatefulWidget {
   final int startRow;
   final int startCol;
@@ -213,7 +211,6 @@ class _BombTargetOverlayState extends State<BombTargetOverlay>
   }
 }
 
-/// Custom painter for bomb target area
 class BombTargetPainter extends CustomPainter {
   final int startRow;
   final int startCol;
@@ -236,10 +233,8 @@ class BombTargetPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3;
 
-    // Calculate cell size (assuming square grid)
     final cellSize = size.width / 9;
 
-    // Draw bomb target area (3x3)
     final targetRect = Rect.fromLTWH(
       startCol * cellSize,
       startRow * cellSize,
@@ -250,7 +245,6 @@ class BombTargetPainter extends CustomPainter {
     canvas.drawRect(targetRect, paint);
     canvas.drawRect(targetRect, borderPaint);
 
-    // Draw crosshairs
     final centerX = targetRect.center.dx;
     final centerY = targetRect.center.dy;
 
@@ -258,14 +252,12 @@ class BombTargetPainter extends CustomPainter {
       ..color = Colors.white.withOpacity(opacity)
       ..strokeWidth = 2;
 
-    // Horizontal line
     canvas.drawLine(
       Offset(targetRect.left, centerY),
       Offset(targetRect.right, centerY),
       crosshairPaint,
     );
 
-    // Vertical line
     canvas.drawLine(
       Offset(centerX, targetRect.top),
       Offset(centerX, targetRect.bottom),

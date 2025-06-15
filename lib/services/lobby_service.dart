@@ -7,39 +7,33 @@ import 'package:firebase_core/firebase_core.dart';
 import '../models/lobby_model.dart';
 import '../utils/sudoku_engine.dart';
 import '../services/game_state_service.dart';
-import '../services/powerup_service.dart'; // 🔥 NEW: Import powerup service
+import '../services/powerup_service.dart';
 
 class LobbyService {
-  // Use your custom "lobbies" database instead of default
   static final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
     app: Firebase.app(),
     databaseId: 'lobbies',
   );
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // Collection names defined here
   static const String _lobbiesCollection = 'lobbies';
   static const String _usersCollection = 'users';
   static const String _gameResultsCollection = 'gameResults';
   static const String _movesCollection = 'moves';
 
-  // Create a new lobby with puzzle generated immediately
   static Future<String> createLobby(LobbyCreationRequest request) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not authenticated');
 
     try {
-      // Get user data
       final userData = await getUserData(user.uid);
 
-      // Generate puzzle immediately when creating lobby
       print('🎲 Generating puzzle for difficulty: ${request.gameSettings.difficulty}');
       final sharedPuzzle = _generateSharedPuzzle(request.gameSettings.difficulty);
       print('✅ Puzzle generated with ID: ${sharedPuzzle['id']}');
 
       final accessCode = request.isPrivate ? _generateAccessCode() : null;
 
-      // Create player object
       final hostPlayer = Player(
         id: user.uid,
         name: userData['name'] ?? user.displayName ?? 'Unknown',
@@ -48,7 +42,6 @@ class LobbyService {
         joinedAt: DateTime.now(),
       );
 
-      // Create lobby data map with shared puzzle
       final lobbyData = {
         'hostPlayerId': user.uid,
         'hostPlayerName': hostPlayer.name,
@@ -80,7 +73,6 @@ class LobbyService {
 
       final lobbyId = docRef.id;
 
-      // 🔥 NEW: Initialize powerups if this is a powerup game mode
       if (request.gameMode == GameMode.powerup) {
         print('🔮 Initializing powerup system for powerup lobby: $lobbyId');
         await PowerupService.initializePowerups(lobbyId);
@@ -96,7 +88,6 @@ class LobbyService {
     }
   }
 
-  // CO-OP: New method to decrement the shared hint count using a transaction
   static Future<void> useSharedHint(String lobbyId) async {
     final lobbyRef = _firestore.collection(_lobbiesCollection).doc(lobbyId);
     try {
@@ -115,30 +106,24 @@ class LobbyService {
     }
   }
 
-
-  // Generate shared puzzle using SudokuEngine with proper Firestore serialization
   static Map<String, dynamic> _generateSharedPuzzle(String difficulty) {
     try {
       print('🎯 Generating puzzle with SudokuEngine for difficulty: $difficulty');
 
-      // Convert string to Difficulty enum
       Difficulty difficultyEnum = _stringToDifficulty(difficulty);
 
-      // Generate puzzle using SudokuEngine
       final rawPuzzleData = SudokuEngine.generatePuzzle(difficultyEnum);
       print('✅ Raw puzzle generated');
 
-      // Extract puzzle and solution as List<List<int>>
       final puzzle = rawPuzzleData['puzzle'] as List<List<int>>;
       final solution = rawPuzzleData['solution'] as List<List<int>>;
 
-      // Flatten to 1D arrays for Firestore (avoid nested arrays)
       final puzzleFlat = puzzle.expand((row) => row).toList();
       final solutionFlat = solution.expand((row) => row).toList();
 
       final firestorePuzzle = <String, dynamic>{
-        'puzzleFlat': puzzleFlat,     // Flattened 1D array (81 elements)
-        'solutionFlat': solutionFlat, // Flattened 1D array (81 elements)
+        'puzzleFlat': puzzleFlat,
+        'solutionFlat': solutionFlat,
         'difficulty': difficulty,
         'id': 'puzzle_${DateTime.now().millisecondsSinceEpoch}',
         'createdAt': DateTime.now().millisecondsSinceEpoch,
@@ -159,7 +144,6 @@ class LobbyService {
     }
   }
 
-  // Fallback deterministic puzzle if SudokuEngine fails
   static Map<String, dynamic> _createDeterministicPuzzle(String difficulty) {
     print('🔄 Creating deterministic fallback puzzle');
 
@@ -187,7 +171,6 @@ class LobbyService {
       [3, 4, 5, 2, 8, 6, 1, 7, 9]
     ];
 
-    // Flatten for Firestore storage
     final puzzleFlat = basePuzzle.expand((row) => row).toList();
     final solutionFlat = solution.expand((row) => row).toList();
 
@@ -202,7 +185,6 @@ class LobbyService {
     };
   }
 
-  // Join a public lobby
   static Future<void> joinPublicLobby(String lobbyId) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not authenticated');
@@ -249,7 +231,6 @@ class LobbyService {
     });
   }
 
-  // Join a private lobby with access code
   static Future<String> joinPrivateLobby(String accessCode) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not authenticated');
@@ -271,15 +252,12 @@ class LobbyService {
 
     final lobbyDoc = querySnapshot.docs.first;
     print('✅ Found lobby: ${lobbyDoc.id}');
-
-    // Join the public lobby logic (reuse existing logic)
     await joinPublicLobby(lobbyDoc.id);
 
     print('✅ Successfully joined private lobby: ${lobbyDoc.id}');
     return lobbyDoc.id;
   }
 
-  // Leave a lobby
   static Future<void> leaveLobby(String lobbyId) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not authenticated');
@@ -297,14 +275,13 @@ class LobbyService {
           .toList();
 
       if (updatedPlayersList.isEmpty) {
-        // Delete lobby if no players left
+
         print('🗑️ Deleting empty lobby: $lobbyId');
         transaction.delete(lobbyRef);
 
-        // Also clean up associated data
+
         _cleanupLobbyData(lobbyId);
       } else if (updatedPlayersList.length == 1 && lobby.status != LobbyStatus.waiting) {
-        // If only 1 player left after a completed game, mark lobby for cleanup
         print('⚠️ Only 1 player left in post-game lobby, marking for cleanup');
         transaction.update(lobbyRef, {
           'currentPlayers': updatedPlayersList.length,
@@ -313,7 +290,6 @@ class LobbyService {
           'cleanupAt': DateTime.now().add(Duration(minutes: 5)).millisecondsSinceEpoch,
         });
       } else if (lobby.hostPlayerId == user.uid) {
-        // Transfer host to another player
         final newHost = updatedPlayersList.first;
         transaction.update(lobbyRef, {
           'hostPlayerId': newHost.id,
@@ -322,7 +298,6 @@ class LobbyService {
           'playersList': updatedPlayersList.map((p) => p.toMap()).toList(),
         });
       } else {
-        // Just remove the player
         transaction.update(lobbyRef, {
           'currentPlayers': updatedPlayersList.length,
           'playersList': updatedPlayersList.map((p) => p.toMap()).toList(),
@@ -331,12 +306,10 @@ class LobbyService {
     });
   }
 
-  // Clean up lobby associated data
   static Future<void> _cleanupLobbyData(String lobbyId) async {
     try {
       final batch = _firestore.batch();
 
-      // Clean up game states
       final gameStates = await _firestore
           .collection(_lobbiesCollection)
           .doc(lobbyId)
@@ -347,7 +320,6 @@ class LobbyService {
         batch.delete(doc.reference);
       }
 
-      // Clean up game results
       final gameResults = await _firestore
           .collection(_lobbiesCollection)
           .doc(lobbyId)
@@ -358,7 +330,6 @@ class LobbyService {
         batch.delete(doc.reference);
       }
 
-      // Clean up messages
       final messages = await _firestore
           .collection(_lobbiesCollection)
           .doc(lobbyId)
@@ -369,7 +340,6 @@ class LobbyService {
         batch.delete(doc.reference);
       }
 
-      // 🔥 NEW: Clean up powerup data
       await PowerupService.clearLobbyPowerups(lobbyId);
 
       await batch.commit();
@@ -379,7 +349,6 @@ class LobbyService {
     }
   }
 
-  // Get public lobbies stream with cleanup filtering
   static Stream<List<Lobby>> getPublicLobbies() {
     return _firestore
         .collection(_lobbiesCollection)
@@ -389,18 +358,15 @@ class LobbyService {
         .limit(20)
         .snapshots()
         .map((snapshot) {
-      // Filter out lobbies marked for cleanup or with insufficient players
       final validLobbies = snapshot.docs
           .where((doc) {
         final lobby = Lobby.fromFirestore(doc);
         final data = doc.data() as Map<String, dynamic>?;
 
-        // Don't show lobbies marked for cleanup
         if (data?['markedForCleanup'] == true) {
           return false;
         }
 
-        // Don't show lobbies with only 1 player after 2 minutes
         if (lobby.currentPlayers == 1) {
           final ageInMinutes = DateTime.now().difference(lobby.createdAt).inMinutes;
           if (ageInMinutes > 2) {
@@ -417,7 +383,6 @@ class LobbyService {
     });
   }
 
-  // Get specific lobby stream
   static Stream<Lobby?> getLobby(String lobbyId) {
     return _firestore
         .collection(_lobbiesCollection)
@@ -426,7 +391,6 @@ class LobbyService {
         .map((doc) => doc.exists ? Lobby.fromFirestore(doc) : null);
   }
 
-  // Start game (host only) - Just change status since puzzle already exists
   static Future<void> startGame(String lobbyId) async {
     print('🎮 LobbyService.startGame called for lobby: $lobbyId');
 
@@ -458,7 +422,6 @@ class LobbyService {
           throw Exception('Need at least 2 players to start');
         }
 
-        // Verify shared puzzle exists
         if (lobby.sharedPuzzle == null || lobby.sharedPuzzle!.isEmpty) {
           print('❌ No shared puzzle found');
           throw Exception('No puzzle available for this lobby');
@@ -467,10 +430,8 @@ class LobbyService {
         print('✅ Shared puzzle verified');
         print('🔄 Updating lobby status to starting...');
 
-        // Clear previous game states before starting new game
         await GameStateService.clearGameStates(lobbyId);
 
-        // Just update status since puzzle already exists
         transaction.update(lobbyRef, {
           'status': 'starting',
           'startedAt': DateTime.now().millisecondsSinceEpoch,
@@ -486,7 +447,6 @@ class LobbyService {
     }
   }
 
-  // Reset lobby status after game completion
   static Future<void> resetLobbyForNewGame(String lobbyId) async {
     try {
       await _firestore.collection(_lobbiesCollection).doc(lobbyId).update({
@@ -503,10 +463,8 @@ class LobbyService {
     }
   }
 
-  // Get user data with better offline handling
   static Future<Map<String, dynamic>> getUserData(String userId) async {
     try {
-      // Try to get from cache first
       final userDoc = await _firestore
           .collection(_usersCollection)
           .doc(userId)
@@ -516,7 +474,7 @@ class LobbyService {
         return userDoc.data()!;
       }
 
-      // If not in cache, try server
+
       final serverDoc = await _firestore
           .collection(_usersCollection)
           .doc(userId)
@@ -525,12 +483,10 @@ class LobbyService {
       if (serverDoc.exists && serverDoc.data() != null) {
         return serverDoc.data()!;
       } else {
-        // Create user document if it doesn't exist
         return await _createDefaultUserData(userId);
       }
     } catch (e) {
       print('Error getting user data: $e');
-      // Return default data if all else fails
       final user = _auth.currentUser;
       return {
         'name': user?.displayName ?? 'Player',
@@ -543,7 +499,6 @@ class LobbyService {
     }
   }
 
-  // Create default user data
   static Future<Map<String, dynamic>> _createDefaultUserData(String userId) async {
     final user = _auth.currentUser;
     final userData = {
@@ -567,7 +522,6 @@ class LobbyService {
     return userData;
   }
 
-  // Generate 6-character access code
   static String _generateAccessCode() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     final random = Random();
@@ -577,7 +531,6 @@ class LobbyService {
     ));
   }
 
-  // Get lobbies user is currently in
   static Stream<List<Lobby>> getUserLobbies() {
     final user = _auth.currentUser;
     if (user == null) return Stream.value([]);
@@ -592,7 +545,6 @@ class LobbyService {
   }
 
 
-  // CO-OP: Method to send a single move to Firebase.
   static Future<void> sendCoOpMove(String lobbyId, int row, int col, int number) async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -611,11 +563,9 @@ class LobbyService {
       });
     } catch (e) {
       print('Error sending co-op move: $e');
-      // Handle error appropriately
     }
   }
 
-  // CO-OP: Method to get a stream of moves from Firebase.
   static Stream<Map<String, dynamic>> getCoOpMoves(String lobbyId) {
     return _firestore
         .collection(_lobbiesCollection)
@@ -632,11 +582,9 @@ class LobbyService {
     }));
   }
 
-  // NEW: Method to increment the shared mistake count using a transaction
   static Future<void> incrementSharedMistakes(String lobbyId) async {
     final lobbyRef = _firestore.collection(_lobbiesCollection).doc(lobbyId);
     try {
-      // Use a transaction to prevent race conditions
       await _firestore.runTransaction((transaction) async {
         final snapshot = await transaction.get(lobbyRef);
         if (!snapshot.exists) throw Exception("Lobby does not exist!");
@@ -650,8 +598,6 @@ class LobbyService {
 
 }
 
-
-// Helper function to convert string to Difficulty enum
 Difficulty _stringToDifficulty(String difficulty) {
   switch (difficulty.toLowerCase()) {
     case 'easy':

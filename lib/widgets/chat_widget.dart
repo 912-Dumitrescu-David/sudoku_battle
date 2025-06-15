@@ -118,7 +118,6 @@ class _LobbyChatState extends State<LobbyChat> {
       );
     }
 
-    // Expanded view - full chat interface
     return Container(
       height: 300,
       decoration: BoxDecoration(
@@ -204,7 +203,6 @@ class _LobbyChatState extends State<LobbyChat> {
 
                 final messages = snapshot.data!.docs;
 
-                // Auto-scroll to bottom when new messages arrive
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (_scrollController.hasClients) {
                     _scrollController.animateTo(

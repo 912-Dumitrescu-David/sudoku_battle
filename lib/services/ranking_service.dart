@@ -12,33 +12,26 @@ class RankingService {
   );
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // ELO calculation constants
-  static const double kFactor = 32.0; // Standard K-factor for ELO
+  static const double kFactor = 32.0;
   static const int defaultRating = 1000;
 
-  // Queue collection names
   static const String _rankedQueueCollection = 'rankedQueue';
   static const String _usersCollection = 'users';
 
-  /// Calculate new ELO ratings after a match
   static Map<String, int> calculateNewRatings({
     required int winnerRating,
     required int loserRating,
     bool isDraw = false,
   }) {
-    // Expected scores
     double expectedWinner = 1 / (1 + pow(10, (loserRating - winnerRating) / 400));
     double expectedLoser = 1 / (1 + pow(10, (winnerRating - loserRating) / 400));
 
-    // Actual scores
     double actualWinner = isDraw ? 0.5 : 1.0;
     double actualLoser = isDraw ? 0.5 : 0.0;
 
-    // New ratings
     int newWinnerRating = (winnerRating + kFactor * (actualWinner - expectedWinner)).round();
     int newLoserRating = (loserRating + kFactor * (actualLoser - expectedLoser)).round();
 
-    // Ensure minimum rating of 100
     newWinnerRating = max(100, newWinnerRating);
     newLoserRating = max(100, newLoserRating);
 
@@ -48,7 +41,6 @@ class RankingService {
     };
   }
 
-  /// Update player ratings after a match
   static Future<void> updatePlayerRatings({
     required String winnerId,
     required String loserId,
@@ -65,7 +57,6 @@ class RankingService {
 
       final batch = _firestore.batch();
 
-      // Update winner's rating
       final winnerRef = _firestore.collection(_usersCollection).doc(winnerId);
       batch.update(winnerRef, {
         'rating': newRatings['winner'],
@@ -74,7 +65,6 @@ class RankingService {
         'lastMatchAt': FieldValue.serverTimestamp(),
       });
 
-      // Update loser's rating
       final loserRef = _firestore.collection(_usersCollection).doc(loserId);
       batch.update(loserRef, {
         'rating': newRatings['loser'],
@@ -92,18 +82,15 @@ class RankingService {
     }
   }
 
-  /// Join the ranked queue with improved limits
   static Future<void> joinRankedQueue() async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not authenticated');
 
     try {
-      // Get user data including current rating
       final userDoc = await _firestore.collection(_usersCollection).doc(user.uid).get();
       final userData = userDoc.data() ?? {};
       final currentRating = userData['rating'] ?? defaultRating;
 
-      // Add to ranked queue with initial settings
       await _firestore.collection(_rankedQueueCollection).doc(user.uid).set({
         'playerId': user.uid,
         'playerName': user.displayName ?? 'Player',
@@ -111,9 +98,9 @@ class RankingService {
         'avatarUrl': user.photoURL,
         'joinedQueueAt': FieldValue.serverTimestamp(),
         'localJoinedAt': DateTime.now().millisecondsSinceEpoch,
-        'searchRadius': 100, // 🔥 Start with smaller radius
-        'maxSearchRadius': 600, // 🔥 NEW: Max search radius limit
-        'maxQueueTime': 180, // 🔥 NEW: Max queue time in seconds (3 minutes)
+        'searchRadius': 100,
+        'maxSearchRadius': 600,
+        'maxQueueTime': 180,
         'isMatched': false,
         'matchedWith': null,
       });
@@ -130,7 +117,6 @@ class RankingService {
 
 
 
-  /// Leave the ranked queue
   static Future<void> leaveRankedQueue() async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -143,7 +129,6 @@ class RankingService {
     }
   }
 
-  /// Listen to queue status for current user
   static Stream<QueueStatus?> getQueueStatus() {
     final user = _auth.currentUser;
     if (user == null) return Stream.value(null);
@@ -158,12 +143,10 @@ class RankingService {
     });
   }
 
-  /// Find and create a ranked match with improved limits
   static Future<String?> findRankedMatch(String playerId) async {
     try {
       print('🔍 Finding match for player: $playerId');
 
-      // Get current player's queue entry
       final playerDoc = await _firestore.collection(_rankedQueueCollection).doc(playerId).get();
       if (!playerDoc.exists) {
         print('❌ Player not in queue');
@@ -173,28 +156,24 @@ class RankingService {
       final playerData = playerDoc.data()!;
       final playerRating = playerData['rating'] as int;
       final currentRadius = playerData['searchRadius'] as int;
-      final maxRadius = playerData['maxSearchRadius'] as int? ?? 600; // 🔥 Use limit
+      final maxRadius = playerData['maxSearchRadius'] as int? ?? 600;
       final joinedAt = playerData['localJoinedAt'] as int;
-      final maxQueueTime = playerData['maxQueueTime'] as int? ?? 180; // 🔥 Use limit
+      final maxQueueTime = playerData['maxQueueTime'] as int? ?? 180;
 
-      // 🔥 Check if player has been in queue too long
       final timeInQueue = DateTime.now().millisecondsSinceEpoch - joinedAt;
       if (timeInQueue > (maxQueueTime * 1000)) {
         print('⏰ Player has been in queue too long (${timeInQueue ~/ 1000}s > ${maxQueueTime}s)');
-        // Remove from queue due to timeout
         await _firestore.collection(_rankedQueueCollection).doc(playerId).delete();
         return null;
       }
 
       print('🔍 Player rating: $playerRating, search radius: $currentRadius');
 
-      // Find potential opponents within search radius
       final minRating = playerRating - currentRadius;
       final maxRating = playerRating + currentRadius;
 
       print('🔍 Searching for opponents with rating between $minRating and $maxRating');
 
-      // Get all unmatched players in queue
       final allPlayersQuery = await _firestore
           .collection(_rankedQueueCollection)
           .where('isMatched', isEqualTo: false)
@@ -202,12 +181,10 @@ class RankingService {
 
       print('📊 Found ${allPlayersQuery.docs.length} unmatched players in queue');
 
-      // Filter by rating range and exclude self
       final potentialOpponents = allPlayersQuery.docs
           .where((doc) {
-        if (doc.id == playerId) return false; // Exclude self
+        if (doc.id == playerId) return false;
 
-        // 🔥 Check if opponent hasn't timed out
         final opponentData = doc.data();
         final opponentJoinedAt = opponentData['localJoinedAt'] as int? ?? 0;
         final opponentMaxTime = opponentData['maxQueueTime'] as int? ?? 180;
@@ -215,7 +192,6 @@ class RankingService {
 
         if (opponentTimeInQueue > (opponentMaxTime * 1000)) {
           print('⏰ Removing timed out opponent: ${doc.id}');
-          // Remove timed out opponent (fire and forget)
           _firestore.collection(_rankedQueueCollection).doc(doc.id).delete();
           return false;
         }
@@ -232,12 +208,9 @@ class RankingService {
 
       if (potentialOpponents.isEmpty) {
         print('⏰ No opponents found, checking if we can expand search radius');
-
-        // 🔥 FIXED: Only expand radius at proper intervals (20 seconds), not every search
         final timeInQueue = DateTime.now().millisecondsSinceEpoch - joinedAt;
         final timeInQueueSeconds = timeInQueue ~/ 1000;
 
-        // Calculate what the radius SHOULD be based on time in queue
         const int EXPANSION_INTERVAL_SECONDS = 20;
         const int EXPANSION_AMOUNT = 50;
         const int INITIAL_RADIUS = 100;
@@ -250,7 +223,6 @@ class RankingService {
         print('🔍 Current radius: $currentRadius');
         print('🔍 Expected radius: $expectedRadius');
 
-        // Only update if the current radius is behind what it should be
         if (currentRadius < expectedRadius && currentRadius < maxRadius) {
           await _firestore.collection(_rankedQueueCollection).doc(playerId).update({
             'searchRadius': expectedRadius,
@@ -281,11 +253,9 @@ class RankingService {
       print('  Player: ${playerData['playerName']} (${playerData['rating']})');
       print('  Opponent: ${opponentData['playerName']} (${opponentData['rating']})');
 
-      // Use transaction to prevent race conditions
       String? lobbyId;
 
       await _firestore.runTransaction((transaction) async {
-        // Re-check that both players are still available
         final playerCheck = await transaction.get(_firestore.collection(_rankedQueueCollection).doc(playerId));
         final opponentCheck = await transaction.get(_firestore.collection(_rankedQueueCollection).doc(opponentId));
 
@@ -300,7 +270,6 @@ class RankingService {
           throw Exception('One of the players is already matched');
         }
 
-        // 🔥 Double-check timeout before creating match
         final now = DateTime.now().millisecondsSinceEpoch;
         final playerTime = now - (playerCheckData['localJoinedAt'] as int);
         final opponentTime = now - (opponentCheckData['localJoinedAt'] as int);
@@ -311,10 +280,8 @@ class RankingService {
           throw Exception('One of the players timed out during match creation');
         }
 
-        // Create the lobby first
         lobbyId = await _createRankedLobby(playerCheckData, opponentCheckData);
 
-        // Mark both players as matched
         transaction.update(_firestore.collection(_rankedQueueCollection).doc(playerId), {
           'isMatched': true,
           'matchedWith': opponentId,
@@ -332,7 +299,6 @@ class RankingService {
 
       print('✅ Match created successfully! Lobby ID: $lobbyId');
 
-      // Clean up queue entries after a delay
       Future.delayed(Duration(seconds: 10), () async {
         try {
           final batch = _firestore.batch();
@@ -352,17 +318,15 @@ class RankingService {
       return null;
     }
   }
-  /// Create a ranked lobby for matched players
+
   static Future<String> _createRankedLobby(
       Map<String, dynamic> player1Data,
       Map<String, dynamic> player2Data) async {
     try {
       print('🏆 Creating ranked lobby...');
 
-      // Generate puzzle for ranked match using SudokuEngine
       final sharedPuzzle = _generateRankedPuzzle();
 
-      // Create players
       final player1 = Player(
         id: player1Data['playerId'],
         name: player1Data['playerName'],
@@ -382,21 +346,19 @@ class RankingService {
       print('👥 Player 1: ${player1.name} (${player1.rating})');
       print('👥 Player 2: ${player2.name} (${player2.rating})');
 
-      // Ranked game settings (standardized)
       final gameSettings = GameSettings(
-        timeLimit: 600, // 10 minutes
-        allowHints: false, // No hints in ranked
+        timeLimit: 600,
+        allowHints: false,
         allowMistakes: true,
         maxMistakes: 3,
         difficulty: 'medium',
       );
 
-      // Create lobby data - MAKE SURE isRanked is set!
       final lobbyData = {
         'hostPlayerId': player1.id,
         'hostPlayerName': player1.name,
         'gameMode': 'classic',
-        'isPrivate': true, // Ranked matches are private
+        'isPrivate': true,
         'accessCode': null,
         'maxPlayers': 2,
         'currentPlayers': 2,
@@ -408,9 +370,9 @@ class RankingService {
         'gameSessionId': null,
         'gameServerEndpoint': null,
         'sharedPuzzle': sharedPuzzle,
-        'isRanked': true, // ⭐ CRITICAL: Mark as ranked match
+        'isRanked': true,
         'averageRating': ((player1.rating + player2.rating) / 2).round(),
-        'rankedMatchId': 'ranked_${DateTime.now().millisecondsSinceEpoch}', // Extra identifier
+        'rankedMatchId': 'ranked_${DateTime.now().millisecondsSinceEpoch}',
       };
 
       print('💾 Creating lobby with isRanked: true');
@@ -432,37 +394,32 @@ class RankingService {
     }
   }
 
-  /// Generate puzzle for ranked matches using SudokuEngine
   static Map<String, dynamic> _generateRankedPuzzle() {
     try {
       print('🎲 Generating random ranked puzzle using SudokuEngine...');
 
-      // Generate a medium difficulty puzzle for ranked matches
       final puzzleData = SudokuEngine.generatePuzzle(Difficulty.medium);
 
       print('✅ SudokuEngine puzzle generated');
       print('Puzzle ID: ${puzzleData['id']}');
       print('Difficulty: ${puzzleData['difficulty']}');
 
-      // Extract puzzle and solution as List<List<int>>
       final puzzle = puzzleData['puzzle'] as List<List<int>>;
       final solution = puzzleData['solution'] as List<List<int>>;
 
-      // Flatten to 1D arrays for Firestore (avoid nested arrays)
       final puzzleFlat = puzzle.expand((row) => row).toList();
       final solutionFlat = solution.expand((row) => row).toList();
 
-      // Count empty cells for verification
       final emptyCells = puzzleFlat.where((cell) => cell == 0).length;
       print('📊 Generated puzzle stats:');
       print('  Empty cells: $emptyCells');
       print('  Puzzle sample: ${puzzle[0].sublist(0, 5)}...');
 
       final firestorePuzzle = <String, dynamic>{
-        'puzzleFlat': puzzleFlat,     // Flattened 1D array (81 elements)
-        'solutionFlat': solutionFlat, // Flattened 1D array (81 elements)
-        'difficulty': 'medium',       // Always medium for ranked
-        'id': puzzleData['id'],       // Use the same ID format as SudokuEngine
+        'puzzleFlat': puzzleFlat,
+        'solutionFlat': solutionFlat,
+        'difficulty': 'medium',
+        'id': puzzleData['id'],
         'createdAt': DateTime.now().millisecondsSinceEpoch,
         'puzzleRows': 9,
         'puzzleCols': 9,
@@ -483,11 +440,9 @@ class RankingService {
     }
   }
 
-  /// Fallback deterministic puzzle if SudokuEngine fails (different from lobby service)
   static Map<String, dynamic> _createFallbackRankedPuzzle() {
     print('🔄 Creating fallback ranked puzzle');
 
-    // Use a different base puzzle than the regular lobby service
     final basePuzzle = [
       [0, 2, 0, 6, 0, 8, 0, 0, 0],
       [5, 8, 0, 0, 0, 9, 7, 0, 0],
@@ -512,7 +467,6 @@ class RankingService {
       [7, 4, 5, 3, 1, 6, 8, 9, 2]
     ];
 
-    // Flatten for Firestore storage
     final puzzleFlat = basePuzzle.expand((row) => row).toList();
     final solutionFlat = solution.expand((row) => row).toList();
     final emptyCells = puzzleFlat.where((cell) => cell == 0).length;
@@ -521,7 +475,7 @@ class RankingService {
       'puzzleFlat': puzzleFlat,
       'solutionFlat': solutionFlat,
       'difficulty': 'medium',
-      'id': 'puzzle_${DateTime.now().millisecondsSinceEpoch}', // Use standard format
+      'id': 'puzzle_${DateTime.now().millisecondsSinceEpoch}',
       'createdAt': DateTime.now().millisecondsSinceEpoch,
       'puzzleRows': 9,
       'puzzleCols': 9,
@@ -531,12 +485,11 @@ class RankingService {
     };
   }
 
-  /// Get leaderboard
   static Future<List<PlayerRank>> getLeaderboard({int limit = 50}) async {
     try {
       final snapshot = await _firestore
           .collection(_usersCollection)
-          .where('rating', isGreaterThan: 0) // Show all users with ratings
+          .where('rating', isGreaterThan: 0)
           .orderBy('rating', descending: true)
           .limit(limit)
           .get();
@@ -552,7 +505,6 @@ class RankingService {
     }
   }
 
-  /// Get player's rank
   static Future<PlayerRank?> getPlayerRank(String playerId) async {
     try {
       final userDoc = await _firestore.collection(_usersCollection).doc(playerId).get();
@@ -561,7 +513,6 @@ class RankingService {
       final userData = userDoc.data()!;
       final playerRating = userData['rating'] ?? defaultRating;
 
-      // Count players with higher rating
       final higherRatedCount = await _firestore
           .collection(_usersCollection)
           .where('rating', isGreaterThan: playerRating)
@@ -578,7 +529,6 @@ class RankingService {
   }
 }
 
-// Data models for queue and ranking
 class QueueStatus {
   final String playerId;
   final String playerName;
@@ -603,7 +553,6 @@ class QueueStatus {
   factory QueueStatus.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
 
-    // Handle timestamp conversion
     DateTime joinedAt = DateTime.now();
     if (data['joinedQueueAt'] != null) {
       if (data['joinedQueueAt'] is Timestamp) {

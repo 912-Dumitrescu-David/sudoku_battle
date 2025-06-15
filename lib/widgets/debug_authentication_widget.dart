@@ -1,4 +1,3 @@
-// Add this temporarily to your lobby screen for debugging
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -8,7 +7,6 @@ import 'package:flutter/material.dart';
 class DebugAuthWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    // Use your custom database
     final firestore = FirebaseFirestore.instanceFor(
       app: Firebase.app(),
       databaseId: 'lobbies',
@@ -73,7 +71,6 @@ class DebugAuthWidget extends StatelessWidget {
                     onPressed: () async {
                       try {
                         if (FirebaseAuth.instance.currentUser == null) {
-                          // Sign in anonymously for testing
                           await FirebaseAuth.instance.signInAnonymously();
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text('✅ Signed in anonymously'), backgroundColor: Colors.green),

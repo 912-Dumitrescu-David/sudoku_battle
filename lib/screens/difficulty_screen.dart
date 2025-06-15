@@ -15,7 +15,6 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
   bool _allowMistakes = true;
   int _maxMistakes = 3;
 
-  // Define empty cells count for each difficulty.
   int _emptyCellsCount(String difficulty) {
     switch (difficulty) {
       case 'Easy':
@@ -115,7 +114,6 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
                       contentPadding: EdgeInsets.zero,
                     ),
 
-                    // Max mistakes slider (only show if mistakes are allowed)
                     if (_allowMistakes) ...[
                       SizedBox(height: 8),
                       Text('Maximum Mistakes: $_maxMistakes'),

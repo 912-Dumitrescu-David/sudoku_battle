@@ -12,7 +12,6 @@ class GameStateService {
   );
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // Update player's game status in the lobby
   static Future<void> updatePlayerGameStatus(
       String lobbyId, {
         required bool isCompleted,
@@ -37,12 +36,10 @@ class GameStateService {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      // Add completion timestamp when finishing
       if (isCompleted) {
         data['finishedAt'] = FieldValue.serverTimestamp();
-        data['localFinishedAt'] = DateTime.now().millisecondsSinceEpoch; // Fallback
+        data['localFinishedAt'] = DateTime.now().millisecondsSinceEpoch;
 
-        // Also try to claim first place in a separate atomic operation
         await _tryClaimFirstPlace(lobbyId, user.uid, user.displayName ?? 'Player');
       }
 
@@ -59,7 +56,6 @@ class GameStateService {
     }
   }
 
-  // Try to atomically claim first place
   static Future<void> _tryClaimFirstPlace(String lobbyId, String playerId, String playerName) async {
     try {
       final firstPlaceRef = _firestore
@@ -72,7 +68,6 @@ class GameStateService {
         final doc = await transaction.get(firstPlaceRef);
 
         if (!doc.exists) {
-          // No one has claimed first place yet, claim it!
           transaction.set(firstPlaceRef, {
             'playerId': playerId,
             'playerName': playerName,
@@ -89,7 +84,6 @@ class GameStateService {
     }
   }
 
-  // Get all players' game states for a lobby
   static Stream<List<PlayerGameState>> getGameStates(String lobbyId) {
     return _firestore
         .collection('lobbies')
@@ -101,7 +95,6 @@ class GameStateService {
         .toList());
   }
 
-  // Check if a specific player has completed the game
   static Future<PlayerGameState?> getPlayerGameState(
       String lobbyId, String playerId) async {
     try {
@@ -121,12 +114,10 @@ class GameStateService {
     return null;
   }
 
-  // Get the winner and check if current player was first (using atomic first place claim)
   static Future<Map<String, dynamic>> getGameResult(String lobbyId, String currentPlayerId) async {
     try {
       print('🔍 Getting game result for lobby: $lobbyId, player: $currentPlayerId');
 
-      // Check who claimed first place atomically
       final firstPlaceDoc = await _firestore
           .collection('lobbies')
           .doc(lobbyId)
@@ -147,7 +138,6 @@ class GameStateService {
       print('🥇 First place winner: $winnerName ($winnerId)');
       print('🎯 Current player ($currentPlayerId) is first place: $isFirstPlace');
 
-      // Count total finished players
       final gameStates = await _firestore
           .collection('lobbies')
           .doc(lobbyId)
@@ -166,7 +156,6 @@ class GameStateService {
     }
   }
 
-  // Get the winner of the game (first to complete)
   static Future<PlayerGameState?> getWinner(String lobbyId) async {
     try {
       final snapshot = await _firestore
@@ -187,17 +176,14 @@ class GameStateService {
     return null;
   }
 
-  // Clear game states when starting a new game
   static Future<void> clearGameStates(String lobbyId) async {
     try {
-      // Clear game states
       final gameStates = await _firestore
           .collection('lobbies')
           .doc(lobbyId)
           .collection('gameStates')
           .get();
 
-      // Clear game results
       final gameResults = await _firestore
           .collection('lobbies')
           .doc(lobbyId)
@@ -206,12 +192,10 @@ class GameStateService {
 
       final batch = _firestore.batch();
 
-      // Delete all game states
       for (final doc in gameStates.docs) {
         batch.delete(doc.reference);
       }
 
-      // Delete all game results
       for (final doc in gameResults.docs) {
         batch.delete(doc.reference);
       }
@@ -223,7 +207,6 @@ class GameStateService {
     }
   }
 
-  // Send a game event (like move updates, power-ups, etc.)
   static Future<void> sendGameEvent(
       String lobbyId, {
         required String eventType,
@@ -249,7 +232,6 @@ class GameStateService {
     }
   }
 
-  // Listen to game events
   static Stream<List<GameEvent>> getGameEvents(String lobbyId) {
     return _firestore
         .collection('lobbies')
@@ -262,19 +244,17 @@ class GameStateService {
         .toList());
   }
 
-  // 🔥 NEW: Universal method to end any match (ranked, casual, or co-op) for any reason
   static Future<void> endMatch({
     required String lobbyId,
     required String winnerId,
     required String loserId,
-    required String reason, // e.g., "Mistakes", "Forfeit", "Timeout", "Completion"
+    required String reason,
     String? winnerName,
     String? loserName,
   }) async {
     final lobbyRef = _firestore.collection('lobbies').doc(lobbyId);
 
     try {
-      // Use a transaction to ensure these operations happen together
       await _firestore.runTransaction((transaction) async {
         final lobbyDoc = await transaction.get(lobbyRef);
         if (!lobbyDoc.exists) throw Exception("Lobby not found");
@@ -327,7 +307,6 @@ class GameStateService {
     }
   }
 
-  // 🔥 UPDATED: Specific method for ranked matches (now uses universal endMatch)
   static Future<void> endRankedMatch({
     required String lobbyId,
     required String winnerId,
@@ -342,7 +321,6 @@ class GameStateService {
     );
   }
 
-  // 🔥 NEW: Method to handle forfeit for any game mode
   static Future<void> handleForfeit({
     required String lobbyId,
     required String forfeitingPlayerId,
@@ -357,13 +335,11 @@ class GameStateService {
 
       final lobby = Lobby.fromFirestore(lobbyDoc);
 
-      // Find the opponent who will be the winner
       final opponent = lobby.playersList.firstWhere(
             (p) => p.id != forfeitingPlayerId,
         orElse: () => throw Exception("Opponent not found"),
       );
 
-      // End the match with forfeit reason
       await endMatch(
         lobbyId: lobbyId,
         winnerId: opponent.id,
@@ -379,7 +355,6 @@ class GameStateService {
     }
   }
 
-  // 🔥 NEW: Universal stream to listen for final game results (works for all game modes)
   static Stream<DocumentSnapshot> getFinalGameResultStream(String lobbyId) {
     return _firestore
         .collection('lobbies')
@@ -416,7 +391,6 @@ class PlayerGameState {
   factory PlayerGameState.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
 
-    // Handle server timestamp conversion
     int finishedAtValue = 0;
     if (data['finishedAt'] != null) {
       if (data['finishedAt'] is Timestamp) {

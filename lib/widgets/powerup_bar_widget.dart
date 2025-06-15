@@ -13,7 +13,7 @@ class PowerupBar extends StatelessWidget {
       builder: (context, powerupProvider, child) {
         final playerPowerups = powerupProvider.playerPowerups;
         final screenHeight = MediaQuery.of(context).size.height;
-        final barHeight = screenHeight * 0.08; // 8% of screen height
+        final barHeight = screenHeight * 0.08;
 
         return Container(
           height: barHeight,
@@ -48,7 +48,7 @@ class PowerupBar extends StatelessWidget {
               // Powerup grid
               Expanded(
                 child: GridView.count(
-                  crossAxisCount: 8, // Show all 8 powerup types
+                  crossAxisCount: 8,
                   childAspectRatio: 1,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -123,19 +123,16 @@ class PowerupBar extends StatelessWidget {
   }
 
   void _usePowerup(BuildContext context, PowerupType type, PowerupProvider powerupProvider) {
-    // 🔥 FIXED: Find the first available powerup of this type without using firstOrNull
     PlayerPowerup? powerup;
     try {
       powerup = powerupProvider.playerPowerups
           .where((p) => p.type == type && !p.isUsed)
           .first;
     } catch (e) {
-      // No powerup of this type available
       return;
     }
 
     if (powerup != null) {
-      // Show confirmation for certain powerups
       if (type == PowerupType.freezeOpponent ||
           type == PowerupType.showSolution ||
           type == PowerupType.bomb) {
@@ -143,7 +140,6 @@ class PowerupBar extends StatelessWidget {
           powerupProvider.usePowerup(powerup!.id, type);
         });
       } else {
-        // Use immediately for other powerups
         powerupProvider.usePowerup(powerup.id, type);
       }
     }

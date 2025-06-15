@@ -1,5 +1,3 @@
-// Add this widget temporarily to your ranked queue screen for debugging
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -189,7 +187,6 @@ class DebugRankingWidget extends StatelessWidget {
     try {
       print('🧪 Testing matchmaking for user: ${user.uid}');
 
-      // First, check if user is in queue
       final queueDoc = await FirebaseFirestore.instanceFor(
         app: Firebase.app(),
         databaseId: 'lobbies',
@@ -224,7 +221,6 @@ class DebugRankingWidget extends StatelessWidget {
 
   void _forceMatch(BuildContext context) async {
     try {
-      // Get all players in queue
       final queueSnapshot = await FirebaseFirestore.instanceFor(
         app: Firebase.app(),
         databaseId: 'lobbies',

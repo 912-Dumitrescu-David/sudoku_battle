@@ -23,7 +23,6 @@ void main() async {
   } on FirebaseException catch (e) {
     print('Firebase initialization error: ${e.message}');
   }
-  // In your main.dart, after Firebase.initializeApp()
   FirebaseAuth.instance.authStateChanges().listen((User? user) {
     if (user != null) {
       UserInitializationService.initializeUserIfNeeded();
@@ -35,7 +34,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => SudokuProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => PowerupProvider()), // Add this
+        ChangeNotifierProvider(create: (_) => PowerupProvider()),
         ChangeNotifierProvider(create: (_) => LobbyProvider()),
       ],
       child: SudokuBattleApp(),
@@ -60,10 +59,8 @@ class SudokuBattleApp extends StatelessWidget {
             return Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasData) {
-            // User is signed in
-            return HomeScreen(); // Replace with your actual main screen
+            return HomeScreen();
           }
-          // Not signed in
           return AuthScreen();
         },
       ),

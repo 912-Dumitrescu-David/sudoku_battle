@@ -1,11 +1,7 @@
-// widgets/powerup_utils.dart
 import 'package:flutter/material.dart';
 import '../models/powerup_model.dart';
 
-/// Utility class for powerup-related helper functions
-/// This replaces the extension methods to avoid web compatibility issues
 class PowerupUtils {
-  /// Safe color mapping for powerup types
   static Color getColor(PowerupType type) {
     switch (type) {
       case PowerupType.revealTwoCells:
@@ -29,7 +25,6 @@ class PowerupUtils {
     }
   }
 
-  /// Safe icon mapping for powerup types
   static String getIcon(PowerupType type) {
     switch (type) {
       case PowerupType.revealTwoCells:
@@ -53,7 +48,6 @@ class PowerupUtils {
     }
   }
 
-  /// Safe display name mapping for powerup types
   static String getDisplayName(PowerupType type) {
     switch (type) {
       case PowerupType.revealTwoCells:
@@ -77,7 +71,6 @@ class PowerupUtils {
     }
   }
 
-  /// Safe description mapping for powerup types
   static String getDescription(PowerupType type) {
     switch (type) {
       case PowerupType.revealTwoCells:
@@ -101,7 +94,6 @@ class PowerupUtils {
     }
   }
 
-  /// Get hex color string (if needed for other purposes)
   static String getColorHex(PowerupType type) {
     switch (type) {
       case PowerupType.revealTwoCells:

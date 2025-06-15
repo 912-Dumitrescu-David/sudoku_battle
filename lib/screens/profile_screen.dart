@@ -100,10 +100,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() => _isLoading = true);
       final user = FirebaseAuth.instance.currentUser;
 
-      // Read file as bytes
       final fileBytes = await picked.readAsBytes();
 
-      // Decode image
       img.Image? originalImage = img.decodeImage(fileBytes);
       if (originalImage == null) {
         setState(() => _isLoading = false);
@@ -113,7 +111,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return;
       }
 
-      // Resize if too large (e.g., max 256x256)
       final img.Image resized = img.copyResize(
         originalImage,
         width: 256,
@@ -121,10 +118,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         interpolation: img.Interpolation.cubic,
       );
 
-      // Compress as JPEG
       final Uint8List jpg = Uint8List.fromList(img.encodeJpg(resized, quality: 85));
 
-      // Upload resized/compressed image to Storage
       final storageRef = FirebaseStorage.instance
           .ref()
           .child('user_photos')
@@ -132,12 +127,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await storageRef.putData(jpg, SettableMetadata(contentType: 'image/jpeg'));
       final photoURL = await storageRef.getDownloadURL();
 
-      // Update Auth user profile with new photoURL
       await user?.updatePhotoURL(photoURL);
       await user?.reload();
 
       setState(() {
-        _profileChanged = true; // <--- Profile changed!
+        _profileChanged = true;
       });
       setState(() => _isLoading = false);
     }

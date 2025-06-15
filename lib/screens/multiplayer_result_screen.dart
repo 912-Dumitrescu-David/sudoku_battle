@@ -101,7 +101,6 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
 
       print('🔄 Loading rating changes for ranked match result');
 
-      // Get current user's rating data from your existing system
       final userDoc = await FirebaseFirestore.instanceFor(
         app: Firebase.app(),
         databaseId: 'lobbies',
@@ -111,8 +110,6 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
         final userData = userDoc.data() as Map<String, dynamic>;
         final newRating = userData['rating'] ?? 1000;
 
-        // Try to get the old rating from recent match history or game data
-        // The RankingService should have already updated the rating
         final oldRating = await _getPreviousRating(userData);
 
         setState(() {
@@ -128,7 +125,6 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
     } catch (e) {
       print('❌ Error loading rating changes: $e');
 
-      // Fallback: Just show current rating without change info
       try {
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
@@ -141,7 +137,7 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
             final currentRating = userDoc.data()?['rating'] ?? 1000;
             setState(() {
               _myNewRating = currentRating;
-              _myOldRating = currentRating; // Same as new if we can't get old rating
+              _myOldRating = currentRating;
               _ratingsUpdated = true;
             });
           }
@@ -152,25 +148,19 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
     }
   }
 
-  /// Try to get the previous rating before this match
   Future<int> _getPreviousRating(Map<String, dynamic> userData) async {
     try {
-      // Method 1: Check if there's a previousRating field (if your system stores it)
       if (userData.containsKey('previousRating')) {
         return userData['previousRating'] ?? 1000;
       }
-
-      // Method 2: Try to estimate from the lobby data if available
-      // Look for players' ratings in the lobby data before the match
       for (final player in widget.lobby.playersList) {
         if (player.id == FirebaseAuth.instance.currentUser?.uid) {
-          return player.rating; // This should be the rating before the match
+          return player.rating;
         }
       }
 
-      // Method 3: Fallback - assume a reasonable default based on current rating
       final currentRating = userData['rating'] ?? 1000;
-      return currentRating; // Will show no change if we can't determine old rating
+      return currentRating;
 
     } catch (e) {
       print('Error getting previous rating: $e');
@@ -197,13 +187,11 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
     _hasNavigated = true;
 
     if (widget.lobby.isRanked) {
-      // Ranked games -> go to ranked queue
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => RankedQueueScreen()),
             (route) => route.isFirst,
       );
     } else {
-      // Casual games -> go to lobby browser for multiplayer
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => LobbyScreen()),
             (route) => route.isFirst,
@@ -277,7 +265,6 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
     return widget.isWin ? Icons.emoji_events : Icons.sentiment_dissatisfied;
   }
 
-  // Get appropriate color based on reason and outcome
   Color _getResultColor() {
     if (widget.isWin) {
       if (widget.reason == 'Forfeit') return Colors.orange;
@@ -494,10 +481,8 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
   }
 
   Widget _buildRatingChanges() {
-    // Always show rating changes for ranked games, regardless of reason
     if (!widget.lobby.isRanked) return SizedBox.shrink();
 
-    // Show loading state while ratings are being fetched
     if (_myOldRating == null || _myNewRating == null) {
       return Card(
         elevation: 4,
@@ -638,7 +623,6 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
     );
   }
 
-  /// Get color for rating reason badge
   Color _getRatingReasonColor() {
     switch (widget.reason) {
       case 'Forfeit':
@@ -652,7 +636,6 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
     }
   }
 
-  /// Get text for rating reason badge
   String _getRatingReasonText() {
     if (widget.isWin) {
       switch (widget.reason) {
@@ -779,7 +762,6 @@ class _MultiplayerResultScreenState extends State<MultiplayerResultScreen>
     );
   }
 
-  // Helper methods for reason display
   String _getReasonDisplayText() {
     switch (widget.reason) {
       case 'Forfeit':

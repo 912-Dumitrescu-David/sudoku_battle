@@ -10,13 +10,13 @@ import 'ranked_queue_screen.dart';
 class PostGameLobbyScreen extends StatefulWidget {
   final String lobbyId;
   final bool wasGameCompleted;
-  final bool isRankedGame; // Add this flag
+  final bool isRankedGame;
 
   const PostGameLobbyScreen({
     Key? key,
     required this.lobbyId,
     this.wasGameCompleted = true,
-    this.isRankedGame = false, // Default to false (casual)
+    this.isRankedGame = false,
   }) : super(key: key);
 
   @override
@@ -24,26 +24,22 @@ class PostGameLobbyScreen extends StatefulWidget {
 }
 
 class _PostGameLobbyScreenState extends State<PostGameLobbyScreen> {
-  bool _isChatExpanded = true; // Start with chat expanded for post-game discussion
+  bool _isChatExpanded = true;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Reset the lobby status back to waiting after game
       _resetLobbyStatus();
-      // Join the lobby for post-game chat
       context.read<LobbyProvider>().joinLobby(widget.lobbyId);
     });
   }
 
   Future<void> _resetLobbyStatus() async {
     try {
-      // Reset lobby status to waiting so players can start a new game
       await LobbyService.resetLobbyForNewGame(widget.lobbyId);
     } catch (e) {
       print('Error resetting lobby: $e');
-      // If lobby reset fails, go to appropriate screen based on game type
       if (widget.isRankedGame) {
         Navigator.pushReplacementNamed(context, '/ranked-queue');
       } else {
@@ -196,7 +192,6 @@ class _PostGameLobbyScreenState extends State<PostGameLobbyScreen> {
                 ),
               ),
 
-              // Chat area (expanded by default for post-game discussion)
               Expanded(
                 child: LobbyChat(
                   lobbyId: widget.lobbyId,
@@ -292,7 +287,6 @@ class _PostGameLobbyScreenState extends State<PostGameLobbyScreen> {
           ),
         );
       }
-      // Navigation will be handled by the lobby provider status change
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

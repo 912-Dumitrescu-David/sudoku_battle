@@ -98,13 +98,12 @@ extension PowerupTypeExtension on PowerupType {
   }
 }
 
-// In powerup_model.dart - UPDATE the PowerupSpawn class
 
 class PowerupSpawn {
   final String id;
   final PowerupType type;
-  final int row; // 🔥 UPDATED: May be -1 if not positioned yet
-  final int col; // 🔥 UPDATED: May be -1 if not positioned yet
+  final int row;
+  final int col;
   final DateTime spawnTime;
   final String? claimedBy;
   final DateTime? claimedAt;
@@ -128,8 +127,8 @@ class PowerupSpawn {
             (e) => e.toString() == map['type'],
         orElse: () => PowerupType.revealTwoCells,
       ),
-      row: map['row'] ?? -1, // 🔥 UPDATED: Default to -1 for unpositioned
-      col: map['col'] ?? -1, // 🔥 UPDATED: Default to -1 for unpositioned
+      row: map['row'] ?? -1,
+      col: map['col'] ?? -1,
       spawnTime: DateTime.fromMillisecondsSinceEpoch(map['spawnTime'] ?? 0),
       claimedBy: map['claimedBy'],
       claimedAt: map['claimedAt'] != null
@@ -179,7 +178,6 @@ class PowerupSpawn {
     );
   }
 
-  // 🔥 NEW: Check if this powerup has a valid position
   bool get hasValidPosition => row >= 0 && col >= 0;
 }
 class PlayerPowerup {

@@ -1,5 +1,3 @@
-// Add this to your main.dart or create a separate initialization service
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -11,7 +9,6 @@ class UserInitializationService {
   );
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  /// Initialize user data when they first sign in
   static Future<void> initializeUserIfNeeded() async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -27,7 +24,6 @@ class UserInitializationService {
       if (!userDoc.exists) {
         print('📝 Creating user data for new user: ${user.uid}');
 
-        // Create initial user data
         await _firestore.collection('users').doc(user.uid).set({
           'name': user.displayName ?? user.email?.split('@')[0] ?? 'Player',
           'username': user.displayName ?? user.email?.split('@')[0] ?? 'Player',
@@ -45,12 +41,10 @@ class UserInitializationService {
       } else {
         print('✅ User data already exists');
 
-        // Update last active timestamp
         await _firestore.collection('users').doc(user.uid).update({
           'lastActive': FieldValue.serverTimestamp(),
         });
 
-        // Check if rating exists, if not add it
         final userData = userDoc.data() as Map<String, dynamic>;
         if (!userData.containsKey('rating')) {
           print('📝 Adding missing rating field');
@@ -66,7 +60,6 @@ class UserInitializationService {
     }
   }
 
-  /// Debug function to check current user data
   static Future<void> debugUserData() async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -96,7 +89,6 @@ class UserInitializationService {
     }
   }
 
-  /// Force update user rating (for testing)
   static Future<void> setUserRating(int newRating) async {
     final user = _auth.currentUser;
     if (user == null) return;

@@ -13,7 +13,6 @@ class LobbyProvider extends ChangeNotifier {
   StreamSubscription? _publicLobbiesSubscription;
   StreamSubscription? _currentLobbySubscription;
 
-  // Getters
   List<Lobby> get publicLobbies => _publicLobbies;
   Lobby? get currentLobby => _currentLobby;
   bool get isLoading => _isLoading;
@@ -21,12 +20,10 @@ class LobbyProvider extends ChangeNotifier {
   bool get isInLobby => _currentLobby != null;
   bool get isHost => _currentLobby?.hostPlayerId == FirebaseAuth.instance.currentUser?.uid;
 
-  // Initialize provider
   void initialize() {
     _subscribeToPublicLobbies();
   }
 
-  // Subscribe to public lobbies
   void _subscribeToPublicLobbies() {
     _publicLobbiesSubscription?.cancel();
     _publicLobbiesSubscription = LobbyService.getPublicLobbies().listen(
@@ -40,7 +37,6 @@ class LobbyProvider extends ChangeNotifier {
     );
   }
 
-  // Create a new lobby
   Future<String?> createLobby(LobbyCreationRequest request) async {
     _setLoading(true);
     _clearError();
@@ -57,7 +53,6 @@ class LobbyProvider extends ChangeNotifier {
     }
   }
 
-  // Join a public lobby
   Future<bool> joinPublicLobby(String lobbyId) async {
     _setLoading(true);
     _clearError();
@@ -74,7 +69,6 @@ class LobbyProvider extends ChangeNotifier {
     }
   }
 
-  // Join a private lobby with access code
   Future<bool> joinPrivateLobby(String accessCode) async {
     _setLoading(true);
     _clearError();
@@ -85,10 +79,8 @@ class LobbyProvider extends ChangeNotifier {
       final lobbyId = await LobbyService.joinPrivateLobby(accessCode);
       print('✅ LobbyService returned lobby ID: $lobbyId');
 
-      // Join the lobby to start listening to updates
       await joinLobby(lobbyId);
 
-      // Wait a bit for the lobby data to be populated
       await Future.delayed(Duration(milliseconds: 1000));
 
       if (_currentLobby != null) {
@@ -109,7 +101,6 @@ class LobbyProvider extends ChangeNotifier {
     }
   }
 
-  // Join lobby and subscribe to updates
   Future<void> joinLobby(String lobbyId) async {
     _currentLobbySubscription?.cancel();
 
@@ -118,7 +109,6 @@ class LobbyProvider extends ChangeNotifier {
         _currentLobby = lobby;
         notifyListeners();
 
-        // Handle game start
         if (lobby?.status == LobbyStatus.starting) {
           _handleGameStarting(lobby!);
         }
@@ -131,7 +121,6 @@ class LobbyProvider extends ChangeNotifier {
     );
   }
 
-  // Leave current lobby
   Future<bool> leaveLobby() async {
     if (_currentLobby == null) return true;
 
@@ -152,7 +141,6 @@ class LobbyProvider extends ChangeNotifier {
     }
   }
 
-  // Start game (host only)
   Future<bool> startGame() async {
     if (_currentLobby == null || !isHost) {
       print('❌ Cannot start game - currentLobby: ${_currentLobby != null}, isHost: $isHost');
@@ -176,21 +164,14 @@ class LobbyProvider extends ChangeNotifier {
     }
   }
 
-  // Handle game starting
   void _handleGameStarting(Lobby lobby) {
-    // This will be called when the lobby status changes to 'starting'
     print('🎮 Game starting for lobby: ${lobby.id}');
-
-    // You can emit a custom event or use a callback here
-    // For now, we'll let the UI handle navigation by listening to status changes
   }
 
-  // Check if current user should be navigated to game
   bool shouldNavigateToGame() {
     return _currentLobby?.status == LobbyStatus.starting;
   }
 
-  // Get game navigation data
   Map<String, dynamic>? getGameNavigationData() {
     if (_currentLobby?.status == LobbyStatus.starting) {
       return {
@@ -202,7 +183,7 @@ class LobbyProvider extends ChangeNotifier {
     return null;
   }
 
-  // Get lobby by ID
+
   Future<Lobby?> getLobbyById(String lobbyId) async {
     try {
       final stream = LobbyService.getLobby(lobbyId);
@@ -214,13 +195,10 @@ class LobbyProvider extends ChangeNotifier {
     }
   }
 
-  // Refresh public lobbies
   Future<void> refreshLobbies() async {
-    // The stream will automatically update, but we can trigger a manual refresh
     _subscribeToPublicLobbies();
   }
 
-  // Check if user can join lobby
   bool canJoinLobby(Lobby lobby) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
@@ -230,7 +208,6 @@ class LobbyProvider extends ChangeNotifier {
         !lobby.playersList.any((player) => player.id == user.uid);
   }
 
-  // Get user's current lobby if any - IMPROVED
   Future<Lobby?> getCurrentUserLobby() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
@@ -241,7 +218,6 @@ class LobbyProvider extends ChangeNotifier {
       final userLobbies = await LobbyService.getUserLobbies().first;
       print('📋 Found ${userLobbies.length} lobbies user is in');
 
-      // 🔥 ONLY return lobbies that are actually active (not completed)
       final activeLobby = userLobbies.where((lobby) {
         final isActive = lobby.status == LobbyStatus.waiting ||
             lobby.status == LobbyStatus.starting ||
@@ -260,7 +236,6 @@ class LobbyProvider extends ChangeNotifier {
       } else {
         print('✅ No active lobbies found');
 
-        // 🔥 Clean up any completed lobbies user might still be in
         for (final lobby in userLobbies) {
           if (lobby.status == LobbyStatus.completed) {
             print('🧹 Cleaning up completed lobby: ${lobby.id}');
@@ -279,7 +254,6 @@ class LobbyProvider extends ChangeNotifier {
     return null;
   }
 
-  // Filter lobbies by criteria
   List<Lobby> getFilteredLobbies({
     GameMode? gameMode,
     String? difficulty,
@@ -293,7 +267,6 @@ class LobbyProvider extends ChangeNotifier {
     }).toList();
   }
 
-  // Helper methods
   void _setLoading(bool loading) {
     _isLoading = loading;
     notifyListeners();
@@ -303,7 +276,6 @@ class LobbyProvider extends ChangeNotifier {
     _error = error;
     notifyListeners();
 
-    // Auto-clear error after 5 seconds
     Timer(Duration(seconds: 5), () {
       if (_error == error) {
         _clearError();
@@ -323,7 +295,6 @@ class LobbyProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  // 🔥 NEW: Force clear lobby state (for cleanup after matches)
   void forceCleanupLobbyState() {
     print('🧹 Force cleaning up lobby provider state');
     _currentLobbySubscription?.cancel();

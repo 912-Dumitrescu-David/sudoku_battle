@@ -68,7 +68,6 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
             return SingleChildScrollView(
               child: Column(
                 children: [
-                  // MODIFIED: The 'Expanded' widget is removed from here.
                   Padding(
                     padding: EdgeInsets.all(16),
                     child: Column(
@@ -89,7 +88,6 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                     ),
                   ),
 
-                  // The chat widget and bottom actions are now part of the scrollable content.
                   LobbyChat(
                     lobbyId: widget.lobbyId,
                     isExpanded: _isChatExpanded,
@@ -654,17 +652,14 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
         );
       }
     }
-    // Don't navigate here - let the status change trigger navigation for all players
   }
 
   void _navigateToGame(Lobby lobby) {
-    // Prevent multiple navigations
     if (_hasNavigatedToGame) return;
     _hasNavigatedToGame = true;
 
     print('🎮 Navigating to game for lobby: ${lobby.id}');
 
-    // Use shared puzzle from Firestore
     Map<String, dynamic> puzzle;
     if (lobby.sharedPuzzle != null && lobby.sharedPuzzle!.isNotEmpty) {
       print('✅ Found shared puzzle from Firestore');
@@ -673,11 +668,9 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
       print('Difficulty: ${puzzle['difficulty']}');
     } else {
       print('⚠️ No shared puzzle found, using fallback');
-      // Fallback: generate deterministic puzzle
       puzzle = _generateFallbackPuzzle();
     }
 
-    // Navigate to multiplayer game screen
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -689,10 +682,8 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
     );
   }
 
-  // Convert Firestore puzzle data to game format
   Map<String, dynamic> _convertFirestorePuzzleToGameFormat(Map<String, dynamic> firestorePuzzle) {
     try {
-      // Convert flattened arrays back to 2D format
       final puzzleFlat = (firestorePuzzle['puzzleFlat'] as List).cast<int>();
       final solutionFlat = (firestorePuzzle['solutionFlat'] as List).cast<int>();
 

@@ -40,7 +40,7 @@ class Player {
 }
 
 class GameSettings {
-  final int? timeLimit; // in seconds, null for no limit
+  final int? timeLimit;
   final bool allowHints;
   final bool allowMistakes;
   final int maxMistakes;
@@ -92,8 +92,8 @@ class Lobby {
   final DateTime? startedAt;
   final String? gameSessionId;
   final String? gameServerEndpoint;
-  final Map<String, dynamic>? sharedPuzzle; // Add shared puzzle
-  final bool isRanked; // Add ranked flag
+  final Map<String, dynamic>? sharedPuzzle;
+  final bool isRanked;
   final int? sharedHintCount;
   final int? sharedMistakeCount;
 
@@ -113,7 +113,7 @@ class Lobby {
     this.startedAt,
     this.gameSessionId,
     this.gameServerEndpoint,
-    this.sharedPuzzle, // Add to constructor
+    this.sharedPuzzle,
     this.isRanked = false,
     this.sharedHintCount,
     this.sharedMistakeCount,

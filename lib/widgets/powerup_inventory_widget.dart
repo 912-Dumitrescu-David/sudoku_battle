@@ -1,10 +1,8 @@
-// widgets/powerup_inventory_widget.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/powerup_model.dart';
 import '../providers/powerup_provider.dart';
 import '../utils/powerup_utils.dart';
-/// Widget to display powerup inventory
 class PowerupInventory extends StatelessWidget {
   const PowerupInventory({Key? key}) : super(key: key);
 
@@ -55,7 +53,6 @@ class PowerupInventory extends StatelessWidget {
   void _usePowerup(BuildContext context, PlayerPowerup powerup) async {
     final powerupProvider = context.read<PowerupProvider>();
 
-    // Show confirmation dialog for certain powerups
     if (powerup.type == PowerupType.freezeOpponent ||
         powerup.type == PowerupType.showSolution) {
       final confirmed = await _showUsePowerupDialog(context, powerup.type);
@@ -95,7 +92,6 @@ class PowerupInventory extends StatelessWidget {
   }
 }
 
-/// Individual powerup item in inventory
 class PowerupInventoryItem extends StatelessWidget {
   final PlayerPowerup powerup;
   final VoidCallback onTap;

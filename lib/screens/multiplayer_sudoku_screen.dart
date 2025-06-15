@@ -70,7 +70,6 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     _initializeOpponentStates();
     _listenToGameStates();
 
-    // 🔥 UPDATED: Listen for final result for ALL game modes, not just ranked
     _listenForFinalResult();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -84,10 +83,9 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
   void _listenForFinalResult() {
     _finalResultSubscription =
         GameStateService.getFinalGameResultStream(widget.lobby.id).listen((resultDoc) {
-          // Ensure the result exists and the game hasn't already ended on this client
           if (resultDoc.exists && mounted && !_gameEnded) {
-            _gameEnded = true; // Mark game as ended immediately to prevent other logic
-            _stopGame();       // Stop the timer and other activities
+            _gameEnded = true;
+            _stopGame();
 
             final resultData = resultDoc.data() as Map<String, dynamic>;
             final currentUser = FirebaseAuth.instance.currentUser;
@@ -108,7 +106,6 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             print('   Game Mode: $gameMode');
             print('   Is Ranked: $isRanked');
 
-            // Navigate to the result screen with all the necessary info
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
@@ -120,7 +117,6 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
                   lobby: widget.lobby,
                   winnerName: winnerName,
                   reason: reason,
-                  // Pass co-op specific data if applicable
                   playerSolveCounts: widget.lobby.gameMode == GameMode.coop
                       ? sudokuProvider.getPlayerSolveCounts()
                       : null,
@@ -264,18 +260,15 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
 
-    // Find the opponent who will be the winner
     final opponent = widget.lobby.playersList.firstWhere((p) => p.id != currentUser.uid);
 
-    // Use the universal endMatch method for all game modes
     GameStateService.endMatch(
       lobbyId: widget.lobby.id,
       winnerId: opponent.id,
       loserId: currentUser.uid,
-      reason: "Mistakes", // This player lost due to too many mistakes
+      reason: "Mistakes",
       winnerName: opponent.name,
     );
-    // No navigation code here. The stream listener handles it.
   }
 
 
@@ -286,7 +279,6 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
 
-    // Update player game status first
     await GameStateService.updatePlayerGameStatus(
         widget.lobby.id,
         isCompleted: isWin,
@@ -297,20 +289,17 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     );
 
     if (isWin) {
-      // This player won by completing the puzzle
       final opponent = widget.lobby.playersList.firstWhere((p) => p.id != currentUser.uid);
 
       await GameStateService.endMatch(
         lobbyId: widget.lobby.id,
         winnerId: currentUser.uid,
         loserId: opponent.id,
-        reason: timeUp ? "Timeout" : "Completion", // Normal win or timeout win
+        reason: timeUp ? "Timeout" : "Completion",
         winnerName: currentUser.displayName ?? 'Player',
         loserName: opponent.name,
       );
     }
-
-    // Don't navigate here - let the stream listener handle it for consistency
   }
 
   Future<void> _handleAbandonGame() async {
@@ -318,16 +307,13 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    // Use the universal forfeit handler for ALL game modes
     try {
       await GameStateService.handleForfeit(
         lobbyId: widget.lobby.id,
         forfeitingPlayerId: user.uid,
       );
-      // The stream listener will navigate both players to the result screen
     } catch (e) {
       print('❌ Error handling forfeit: $e');
-      // Fallback: leave lobby the old way
       await context.read<LobbyProvider>().leaveLobby();
       if (mounted) {
         Navigator.of(context).pop();
@@ -749,7 +735,6 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     final provider = context.read<SudokuProvider>();
     final totalToSolve = _calculateTotalToSolve();
 
-    // Only send updates if progress has changed to avoid unnecessary writes
     final newProgress = (totalToSolve > 0) ? provider.solved / totalToSolve : 0.0;
     if ((newProgress - _lastProgress).abs() > 0.001) { // Check for meaningful change
       _lastProgress = newProgress;

@@ -1,9 +1,7 @@
-// widgets/powerup_animations_widget.dart
 import 'package:flutter/material.dart';
 import '../models/powerup_model.dart';
 import '../utils/powerup_utils.dart';
 
-/// Powerup spawn animation widget
 class PowerupSpawnAnimation extends StatefulWidget {
   final PowerupType type;
   final VoidCallback onComplete;
@@ -108,7 +106,6 @@ class _PowerupSpawnAnimationState extends State<PowerupSpawnAnimation>
   }
 }
 
-/// Powerup notification widget
 class PowerupNotification extends StatefulWidget {
   final String message;
   final PowerupType type;

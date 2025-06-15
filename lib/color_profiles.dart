@@ -12,7 +12,6 @@ final ThemeData lightTheme = ThemeData(
     backgroundColor: Colors.blue,
     foregroundColor: Colors.white,
   ),
-  // Add more custom colors as needed
 );
 
 final ThemeData darkTheme = ThemeData(
@@ -28,5 +27,4 @@ final ThemeData darkTheme = ThemeData(
     backgroundColor: Colors.black,
     foregroundColor: Colors.white,
   ),
-  //win-color fail-color
 );

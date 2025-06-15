@@ -108,7 +108,6 @@ class _JoinPrivateLobbyDialogState extends State<JoinPrivateLobbyDialog> {
     });
 
     if (success && mounted) {
-      // Get the lobby ID from the current lobby
       final currentLobby = lobbyProvider.currentLobby;
       if (currentLobby != null) {
         print('✅ Successfully joined lobby: ${currentLobby.id}');
