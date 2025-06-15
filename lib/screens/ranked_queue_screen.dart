@@ -54,12 +54,12 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     });
 
     _pulseController = AnimationController(
-      duration: Duration(seconds: 2),
+      duration: const Duration(seconds: 2),
       vsync: this,
     );
 
     _progressController = AnimationController(
-      duration: Duration(seconds: MAX_QUEUE_TIME_SECONDS), // 🔥 Use max time for progress
+      duration: const Duration(seconds: MAX_QUEUE_TIME_SECONDS), // 🔥 Use max time for progress
       vsync: this,
     );
 
@@ -154,7 +154,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
   void _startSearchTimers() {
     // Timer for updating search duration
     _matchmakingTimer?.cancel();
-    _matchmakingTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+    _matchmakingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
         _secondsInQueue++;
       });
@@ -162,7 +162,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
 
     // 🔥 NEW: Max time timer - auto-leave queue after 3 minutes
     _maxTimeTimer?.cancel();
-    _maxTimeTimer = Timer(Duration(seconds: MAX_QUEUE_TIME_SECONDS), () {
+    _maxTimeTimer = Timer(const Duration(seconds: MAX_QUEUE_TIME_SECONDS), () {
       if (_isInQueue) {
         print('⏰ Max queue time reached (${MAX_QUEUE_TIME_SECONDS}s) - leaving queue');
         _handleQueueTimeout();
@@ -171,7 +171,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
 
     // 🔥 FIXED: Timer for search radius expansion every 20 seconds (not every search attempt)
     _searchRadiusTimer?.cancel();
-    _searchRadiusTimer = Timer.periodic(Duration(seconds: RADIUS_EXPANSION_INTERVAL), (timer) {
+    _searchRadiusTimer = Timer.periodic(const Duration(seconds: RADIUS_EXPANSION_INTERVAL), (timer) {
       print('⏰ 20 seconds passed, triggering radius expansion timer...');
       // The expansion will happen in the next findRankedMatch call
       // We don't need to do anything here - just let the next search attempt handle it
@@ -206,14 +206,14 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          title: Row(
+          title: const Row(
             children: [
               Icon(Icons.access_time, color: Colors.orange),
               SizedBox(width: 8),
               Text('Queue Timeout'),
             ],
           ),
-          content: Column(
+          content: const Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -228,14 +228,14 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('OK'),
+              child: const Text('OK'),
             ),
             ElevatedButton(
               onPressed: () {
                 Navigator.pop(context);
                 _rejoinQueue();
               },
-              child: Text('Try Again'),
+              child: const Text('Try Again'),
             ),
           ],
         ),
@@ -254,7 +254,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
+      builder: (context) => const AlertDialog(
         title: Row(
           children: [
             Icon(Icons.check_circle, color: Colors.green),
@@ -266,7 +266,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
       ),
     );
 
-    Timer(Duration(seconds: 2), () {
+    Timer(const Duration(seconds: 2), () {
       Navigator.of(context).pop();
       Navigator.pushReplacement(
         context,
@@ -314,7 +314,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
 
     print('🔍 Starting matchmaking for user: ${user.uid}');
 
-    Timer.periodic(Duration(seconds: 3), (timer) async {
+    Timer.periodic(const Duration(seconds: 3), (timer) async {
       if (!_isInQueue || _queueStatus?.isMatched == true) {
         print('⏹️ Stopping matchmaking - not in queue or already matched');
         timer.cancel();
@@ -355,18 +355,18 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Ranked Queue'),
+        title: const Text('Ranked Queue'),
         backgroundColor: Colors.purple,
         foregroundColor: Colors.white,
         actions: [
           if (_currentRating != null)
             Padding(
-              padding: EdgeInsets.only(right: 16),
+              padding: const EdgeInsets.only(right: 16),
               child: Center(
                 child: GestureDetector(
                   onTap: _loadCurrentRating,
                   child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(16),
@@ -374,11 +374,11 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.star, color: Colors.white, size: 16),
-                        SizedBox(width: 4),
+                        const Icon(Icons.star, color: Colors.white, size: 16),
+                        const SizedBox(width: 4),
                         Text(
                           '$_currentRating',
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
                           ),
@@ -391,18 +391,21 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
             ),
         ],
       ),
-      body: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          children: [
-            _buildQueueStatusCard(),
-            SizedBox(height: 24),
-            _buildActionButton(),
-            SizedBox(height: 24),
-            _buildInfoCards(),
-            Spacer(),
-            _buildLeaderboardPreview(),
-          ],
+      // ✅ MODIFIED: Wrapped body in a SingleChildScrollView to prevent vertical overflow
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              _buildQueueStatusCard(),
+              const SizedBox(height: 24),
+              _buildActionButton(),
+              const SizedBox(height: 24),
+              _buildInfoCards(),
+              const SizedBox(height: 24), // ✅ MODIFIED: Replaced Spacer with SizedBox
+              _buildLeaderboardPreview(),
+            ],
+          ),
         ),
       ),
     );
@@ -412,7 +415,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     return Card(
       elevation: 4,
       child: Padding(
-        padding: EdgeInsets.all(20),
+        padding: const EdgeInsets.all(20),
         child: Column(
           children: [
             if (_isInQueue) ...[
@@ -421,15 +424,16 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
                 builder: (context, child) {
                   return Transform.scale(
                     scale: 1.0 + (_pulseController.value * 0.1),
-                    child: Icon(
-                      Icons.search,
-                      size: 64,
-                      color: Colors.purple,
-                    ),
+                    child: child,
                   );
                 },
+                child: const Icon(
+                  Icons.search,
+                  size: 64,
+                  color: Colors.purple,
+                ),
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Text(
                 'Searching for Opponent',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -437,41 +441,41 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               // 🔥 NEW: Show time remaining instead of just elapsed
               Text(_formatSearchTime(_secondsInQueue)),
               // 🔥 NEW: Show warning when approaching timeout
               if (_secondsInQueue > MAX_QUEUE_TIME_SECONDS - 30) ...[
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
                   'Timeout in ${MAX_QUEUE_TIME_SECONDS - _secondsInQueue}s',
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Colors.orange,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ],
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               if (_queueStatus != null) ...[
                 _buildSearchInfo(),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 // 🔥 NEW: Progress bar showing time until timeout
                 _buildTimeoutProgressBar(),
               ],
             ] else ...[
-              Icon(
+              const Icon(
                 Icons.emoji_events,
                 size: 64,
                 color: Colors.purple,
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Text(
                 'Ready for Ranked?',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
                 'Compete against players of similar skill level',
                 textAlign: TextAlign.center,
@@ -480,9 +484,9 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
                 ),
               ),
               if (_currentRating != null) ...[
-                SizedBox(height: 12),
+                const SizedBox(height: 12),
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.purple.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(20),
@@ -491,11 +495,11 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.star, color: Colors.purple, size: 20),
-                      SizedBox(width: 4),
+                      const Icon(Icons.star, color: Colors.purple, size: 20),
+                      const SizedBox(width: 4),
                       Text(
                         'Your Rating: $_currentRating',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.purple,
                         ),
@@ -534,7 +538,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
             ),
           ],
         ),
-        SizedBox(height: 4),
+        const SizedBox(height: 4),
         LinearProgressIndicator(
           value: _secondsInQueue / MAX_QUEUE_TIME_SECONDS,
           backgroundColor: Colors.grey[300],
@@ -570,7 +574,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     print('   Calculated radius: $actualSearchRadius');
 
     return Container(
-      padding: EdgeInsets.all(12),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.purple.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
@@ -580,25 +584,25 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Your Rating:'),
+              const Text('Your Rating:'),
               Text(
                 '$rating',
-                style: TextStyle(fontWeight: FontWeight.bold),
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ],
           ),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Search Range:'),
+              const Text('Search Range:'),
               Text(
                 '${rating - actualSearchRadius} - ${rating + actualSearchRadius}',
-                style: TextStyle(fontWeight: FontWeight.bold),
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ],
           ),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           // 🔥 Show current radius and expansion info
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -619,8 +623,8 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
           ),
           // 🔥 Show radius expansion status
           if (actualSearchRadius >= MAX_SEARCH_RADIUS) ...[
-            SizedBox(height: 4),
-            Row(
+            const SizedBox(height: 4),
+            const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(Icons.info, size: 16, color: Colors.orange),
@@ -636,7 +640,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
               ],
             ),
           ] else ...[
-            SizedBox(height: 4),
+            const SizedBox(height: 4),
             Text(
               'Expanding every ${RADIUS_EXPANSION_INTERVAL}s (+$RADIUS_EXPANSION_AMOUNT)',
               style: TextStyle(
@@ -664,125 +668,80 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
         ),
         child: Text(
           _isInQueue ? 'Leave Queue' : 'Join Ranked Queue',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
       ),
     );
   }
 
+  // ✅ NEW: Helper widget to build the individual info cards, reducing code duplication.
+  Widget _buildSingleInfoCard({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+  }) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 32),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ MODIFIED: Replaced Row with Wrap for better responsiveness.
   Widget _buildInfoCards() {
-    return Row(
-      children: [
-        Expanded(
-          child: Card(
-            child: Padding(
-              padding: EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  Icon(Icons.timer, color: Colors.orange, size: 32),
-                  SizedBox(height: 8),
-                  Text(
-                    '10 Min',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  Text(
-                    'Time Limit',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+    // This will now wrap cards to the next line on smaller screens.
+    return Wrap(
+      spacing: 8.0, // Horizontal space between cards
+      runSpacing: 8.0, // Vertical space between cards when they wrap
+      alignment: WrapAlignment.center,
+      children: <Widget>[
+        _buildSingleInfoCard(
+          icon: Icons.timer,
+          color: Colors.orange,
+          title: '10 Min',
+          subtitle: 'Time Limit',
         ),
-        SizedBox(width: 8),
-        Expanded(
-          child: Card(
-            child: Padding(
-              padding: EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  Icon(Icons.block, color: Colors.red, size: 32),
-                  SizedBox(height: 8),
-                  Text(
-                    'No Hints',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  Text(
-                    'Pure Skill',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        _buildSingleInfoCard(
+          icon: Icons.block,
+          color: Colors.red,
+          title: 'No Hints',
+          subtitle: 'Pure Skill',
         ),
-        SizedBox(width: 8),
-        Expanded(
-          child: Card(
-            child: Padding(
-              padding: EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  Icon(Icons.error_outline, color: Colors.amber, size: 32),
-                  SizedBox(height: 8),
-                  Text(
-                    '3 Max',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  Text(
-                    'Mistakes',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        _buildSingleInfoCard(
+          icon: Icons.error_outline,
+          color: Colors.amber,
+          title: '3 Max',
+          subtitle: 'Mistakes',
         ),
-        SizedBox(width: 8),
-        Expanded(
-          child: Card(
-            child: Padding(
-              padding: EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  Icon(Icons.tune, color: Colors.blue, size: 32),
-                  SizedBox(height: 8),
-                  Text(
-                    'Medium',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                  Text(
-                    'Difficulty',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        _buildSingleInfoCard(
+          icon: Icons.tune,
+          color: Colors.blue,
+          title: 'Medium',
+          subtitle: 'Difficulty',
         ),
       ],
     );
@@ -791,7 +750,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
   Widget _buildLeaderboardPreview() {
     return Card(
       child: Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -808,7 +767,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
                   children: [
                     // 🔥 NEW: Refresh button for manual refresh
                     IconButton(
-                      icon: Icon(Icons.refresh, size: 18),
+                      icon: const Icon(Icons.refresh, size: 18),
                       onPressed: () {
                         setState(() {
                           _leaderboardLoaded = false;
@@ -823,17 +782,17 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => LeaderboardScreen(),
+                            builder: (context) => const LeaderboardScreen(),
                           ),
                         );
                       },
-                      child: Text('View All'),
+                      child: const Text('View All'),
                     ),
                   ],
                 ),
               ],
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             // 🔥 FIXED: Use cached data instead of FutureBuilder
             _buildLeaderboardContent(),
           ],
@@ -846,7 +805,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
   Widget _buildLeaderboardContent() {
     if (!_leaderboardLoaded) {
       // Still loading
-      return Center(
+      return const Center(
         child: Padding(
           padding: EdgeInsets.all(16),
           child: CircularProgressIndicator(),
@@ -857,7 +816,7 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     if (_cachedLeaderboard == null || _cachedLeaderboard!.isEmpty) {
       // No data or empty
       return Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Text(
           'No ranked players yet',
           style: TextStyle(color: Colors.grey[600]),
@@ -875,39 +834,39 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
 
   Widget _buildLeaderboardItem(PlayerRank player) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Container(
             width: 30,
             child: Text(
               player.rankDisplay,
-              style: TextStyle(
+              style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
               ),
             ),
           ),
-          SizedBox(width: 8),
+          const SizedBox(width: 8),
           CircleAvatar(
             radius: 16,
             backgroundImage: player.avatarUrl != null
                 ? NetworkImage(player.avatarUrl!)
                 : null,
             child: player.avatarUrl == null
-                ? Icon(Icons.person, size: 16)
+                ? const Icon(Icons.person, size: 16)
                 : null,
           ),
-          SizedBox(width: 8),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               player.playerName,
-              style: TextStyle(fontWeight: FontWeight.w500),
+              style: const TextStyle(fontWeight: FontWeight.w500),
             ),
           ),
           Text(
             '${player.rating}',
-            style: TextStyle(
+            style: const TextStyle(
               fontWeight: FontWeight.bold,
               color: Colors.purple,
             ),
