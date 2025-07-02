@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import '../services/ranking_service.dart';
 import '../providers/lobby_provider.dart';
+import '../providers/sudoku_provider.dart';
 import 'lobby_detail_screen.dart';
 import 'leaderboard_screen.dart';
 import '../widgets/debug_ranking_widget.dart';
@@ -46,8 +47,8 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
     WidgetsBinding.instance.addObserver(this);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final lobbyProvider = context.read<LobbyProvider>();
-      lobbyProvider.forceCleanupLobbyState();
+      context.read<LobbyProvider>().forceCleanupLobbyState();
+      context.read<SudokuProvider>().resetGame();
     });
 
     _pulseController = AnimationController(
@@ -68,6 +69,15 @@ class _RankedQueueScreenState extends State<RankedQueueScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+
+    // ================== BUG FIX IS HERE ==================
+    // This ensures that if the user navigates away from this screen for any reason
+    // (e.g., after a match is found), their entry in the queue is cleaned up.
+    if (_isInQueue) {
+      RankingService.leaveRankedQueue();
+    }
+    // =====================================================
+
     _queueSubscription?.cancel();
     _matchmakingTimer?.cancel();
     _searchRadiusTimer?.cancel();

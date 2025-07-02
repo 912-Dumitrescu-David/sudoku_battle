@@ -253,17 +253,27 @@ class GameStateService {
     String? loserName,
   }) async {
     final lobbyRef = _firestore.collection('lobbies').doc(lobbyId);
+    final gameResultRef = lobbyRef.collection('gameResults').doc('finalResult');
 
     try {
+      // ================== BUG FIX IS HERE ==================
+      // First, check if the game result already exists. If it does, the game has
+      // already been ended by the other player, so we can just stop.
+      final existingResult = await gameResultRef.get();
+      if (existingResult.exists) {
+        print("🏁 Game already ended. Skipping duplicate endMatch call.");
+        return;
+      }
+      // =====================================================
+
       await _firestore.runTransaction((transaction) async {
         final lobbyDoc = await transaction.get(lobbyRef);
         if (!lobbyDoc.exists) throw Exception("Lobby not found");
 
         final lobbyData = lobbyDoc.data() as Map<String, dynamic>;
 
-        // Prevent ending an already completed game
+        // This check inside the transaction is a good failsafe
         if (lobbyData['status'] == 'completed') {
-          print("Game already completed. Skipping end-game logic.");
           return;
         }
 
@@ -278,7 +288,6 @@ class GameStateService {
         transaction.update(lobbyRef, {'status': 'completed'});
 
         // 2. Write the definitive game result that ALL players will listen to
-        final gameResultRef = lobbyRef.collection('gameResults').doc('finalResult');
         transaction.set(gameResultRef, {
           'winnerId': winner.id,
           'winnerName': winnerName ?? winner.name,

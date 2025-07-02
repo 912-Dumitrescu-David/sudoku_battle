@@ -60,6 +60,14 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
   @override
   void initState() {
     super.initState();
+
+    // ================== BUG FIX IS HERE ==================
+    // Call the new reset method at the very beginning of initState.
+    // This guarantees the provider is in a clean state before the game starts.
+    // We use context.read() here which is the same as Provider.of(..., listen: false)
+    context.read<SudokuProvider>().resetGame();
+    // =====================================================
+
     _stopwatch = Stopwatch();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && _gameStarted && !_gameEnded) {
@@ -277,13 +285,6 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
 
   Future<void> _handleGameEnd(bool isWin, SudokuProvider provider, {bool timeUp = false}) async {
     if (_gameEnded) return;
-
-    // ================== BUG FIX IS HERE ==================
-    // The call to _stopGame() has been removed from this function.
-    // The game will now only be stopped inside the _listenForFinalResult listener,
-    // ensuring both players stop and navigate at the same time.
-    // _stopGame(); // <-- THIS LINE WAS REMOVED
-    // =====================================================
 
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;

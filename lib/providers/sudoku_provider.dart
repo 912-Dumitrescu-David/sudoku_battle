@@ -50,9 +50,31 @@ class SudokuProvider extends ChangeNotifier {
     _solution = List.generate(9, (_) => List.filled(9, 0));
     _givenCells = List.generate(9, (_) => List.filled(9, false));
     _errorCells = List.generate(9, (_) => List.filled(9, false));
-
     _playerCellEntries = List.generate(9, (_) => List.filled(9, null));
   }
+
+  // ================== BUG FIX IS HERE ==================
+  // This new method resets all game state variables to their initial values.
+  void resetGame() {
+    print("🔄 Resetting SudokuProvider for a new game.");
+    isGameOver = false;
+    isGameWon = null;
+    _mistakesCount = 0;
+    solvedCells = 0;
+    _bonusTimeAdded = 0;
+    _selectedRow = null;
+    _selectedCol = null;
+    onRankedGameLost = null;
+    _lobbyId = null;
+    _board = List.generate(9, (_) => List.filled(9, null));
+    _solution = List.generate(9, (_) => List.filled(9, 0));
+    _givenCells = List.generate(9, (_) => List.filled(9, false));
+    _errorCells = List.generate(9, (_) => List.filled(9, false));
+    _playerCellEntries = List.generate(9, (_) => List.filled(9, null));
+    // We don't notify listeners here because the screen that calls this
+    // will immediately load a new puzzle, which will trigger the notification.
+  }
+  // =====================================================
 
   List<List<int?>> get board => _board;
   List<List<int>> get solution => _solution;
@@ -174,14 +196,6 @@ class SudokuProvider extends ChangeNotifier {
           (i) => List.generate(9, (j) => _board[i][j] != null && _board[i][j] != 0),
     );
 
-    _errorCells = List.generate(9, (_) => List.filled(9, false));
-    _playerCellEntries = List.generate(9, (_) => List.filled(9, null));
-    _mistakesCount = 0;
-    _selectedRow = null;
-    _selectedCol = null;
-    solvedCells = 0;
-    _bonusTimeAdded = 0;
-
     print('✅ SudokuProvider: Puzzle generated. Powerups enabled: $_isPowerupMode');
     notifyListeners();
   }
@@ -198,7 +212,6 @@ class SudokuProvider extends ChangeNotifier {
     _currentGameMode = gameMode;
     _isRankedGame = isRanked;
     _isPowerupMode = gameMode == GameMode.powerup;
-    _playerCellEntries = List.generate(9, (_) => List.filled(9, null));
 
     if (gameSettings != null) {
       _maxMistakes = gameSettings.allowMistakes ? gameSettings.maxMistakes : 1;
@@ -220,14 +233,6 @@ class SudokuProvider extends ChangeNotifier {
       9,
           (i) => List.generate(9, (j) => _board[i][j] != null && _board[i][j] != 0),
     );
-
-    _errorCells = List.generate(9, (_) => List.filled(9, false));
-    _playerCellEntries = List.generate(9, (_) => List.filled(9, null));
-    _mistakesCount = 0;
-    _selectedRow = null;
-    _selectedCol = null;
-    solvedCells = 0;
-    _bonusTimeAdded = 0;
 
     print('✅ SudokuProvider: Puzzle loaded. Powerups enabled: $_isPowerupMode');
     notifyListeners();

@@ -132,9 +132,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         }
 
         final players = snapshot.data!;
+        // The Column now only contains the Expanded ListView, removing the podium.
         return Column(
           children: [
-            if (players.length >= 3) _buildPodium(players.take(3).toList()),
             Expanded(
               child: ListView.builder(
                 padding: EdgeInsets.all(16),
@@ -202,51 +202,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     );
   }
 
-  Widget _buildPodium(List<PlayerRank> topThree) {
-    return Container(
-      height: 200,
-      padding: EdgeInsets.all(16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (topThree.length > 1) Expanded(child: _buildPodiumPlace(topThree[1], 140, Colors.grey)),
-          if (topThree.isNotEmpty) Expanded(child: _buildPodiumPlace(topThree[0], 180, Colors.amber)),
-          if (topThree.length > 2) Expanded(child: _buildPodiumPlace(topThree[2], 100, Colors.orange)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPodiumPlace(PlayerRank player, double height, Color color) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        _buildPlayerAvatar(
-          avatarUrl: player.avatarUrl,
-          playerName: player.playerName,
-          radius: 25,
-        ),
-        SizedBox(height: 8),
-        Text(player.playerName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
-        Text('${player.rating}', style: TextStyle(fontWeight: FontWeight.bold, color: color)),
-        SizedBox(height: 4),
-        Container(
-          height: height,
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.2),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
-            border: Border.all(color: color, width: 2),
-          ),
-          child: Center(child: Text(player.rankDisplay, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color))),
-        ),
-      ],
-    );
-  }
+  // The _buildPodium and _buildPodiumPlace methods have been completely removed.
 
   Widget _buildRankIcon(int rank) {
     if (rank <= 3) {
       final icons = [Icons.looks_one, Icons.looks_two, Icons.looks_3];
-      final colors = [Colors.amber, Colors.grey, Colors.orange];
+      // Updated the colors to match the icons better
+      final colors = [Colors.amber.shade700, Colors.blueGrey.shade300, Colors.orange.shade800];
       return CircleAvatar(
         radius: 20,
         backgroundColor: colors[rank - 1].withOpacity(0.2),
