@@ -191,15 +191,15 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
       powerupProvider.initialize(widget.lobby.id);
       sudokuProvider.initializePowerups(powerupProvider);
     }
-    if (widget.lobby.isRanked) {
-      sudokuProvider.setGameLostCallback(_handleLocalPlayerLoss);
-    }
+    // This callback is now used for both ranked and casual games
+    sudokuProvider.setGameLostCallback(_handleLocalPlayerLoss);
+
 
     sudokuProvider.loadPuzzle(
       widget.puzzle,
       gameSettings: widget.lobby.gameSettings,
       gameMode: widget.lobby.gameMode,
-
+      isRanked: widget.lobby.isRanked,
     );
 
     Future.delayed(const Duration(seconds: 3), () {
@@ -253,8 +253,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     }
   }
 
-
-  void _handleLocalPlayerLoss() {
+  void _triggerLoss(String reason) {
     if (_gameEnded) return;
 
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -266,15 +265,25 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
       lobbyId: widget.lobby.id,
       winnerId: opponent.id,
       loserId: currentUser.uid,
-      reason: "Mistakes",
+      reason: reason,
       winnerName: opponent.name,
+      loserName: currentUser.displayName ?? 'Player',
     );
   }
 
+  void _handleLocalPlayerLoss() {
+    _triggerLoss("Mistakes");
+  }
 
   Future<void> _handleGameEnd(bool isWin, SudokuProvider provider, {bool timeUp = false}) async {
     if (_gameEnded) return;
-    _stopGame();
+
+    // ================== BUG FIX IS HERE ==================
+    // The call to _stopGame() has been removed from this function.
+    // The game will now only be stopped inside the _listenForFinalResult listener,
+    // ensuring both players stop and navigate at the same time.
+    // _stopGame(); // <-- THIS LINE WAS REMOVED
+    // =====================================================
 
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
@@ -299,6 +308,8 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
         winnerName: currentUser.displayName ?? 'Player',
         loserName: opponent.name,
       );
+    } else {
+      _triggerLoss(timeUp ? "Timeout" : "Mistakes");
     }
   }
 
@@ -447,7 +458,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
                           ),
                         ),
                         if (widget.lobby.gameMode == GameMode.powerup)
-                          SizedBox(height: powerupBarHeight, child: PowerupBar()),
+                          SizedBox(height: powerupBarHeight, child: const PowerupBar()),
                         SizedBox(height: keypadHeight, child: const NumberKeypad()),
                       ],
                     );
@@ -458,9 +469,13 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
                   Positioned(left: _hintButtonOffset.dx, top: _hintButtonOffset.dy, child: Draggable(feedback: _buildHintButton(), childWhenDragging: Opacity(opacity: 0.4, child: _buildHintButton()), onDragEnd: (details) => setState(() => _hintButtonOffset = Offset(details.offset.dx.clamp(0, MediaQuery.of(context).size.width - 60), details.offset.dy.clamp(0, MediaQuery.of(context).size.height - 60))), child: _buildHintButton())),
 
                 if (powerupProvider.isFrozen)
-                  FreezeOverlay(remainingSeconds: powerupProvider.freezeTimeRemaining),
+                  FreezeOverlay(
+                      key: const ValueKey('freeze_overlay'),
+                      remainingSeconds: powerupProvider.freezeTimeRemaining
+                  ),
                 if (powerupProvider.shouldShowSolution)
                   SolutionOverlay(
+                    key: const ValueKey('solution_overlay'),
                     remainingSeconds: powerupProvider.solutionShowTimeRemaining,
                     solution: sudokuProvider.solution,
                   ),
