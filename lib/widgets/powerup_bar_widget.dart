@@ -1,4 +1,3 @@
-// widgets/powerup_bar_widget.dart - FIXED VERSION
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/powerup_model.dart';
@@ -12,11 +11,8 @@ class PowerupBar extends StatelessWidget {
     return Consumer<PowerupProvider>(
       builder: (context, powerupProvider, child) {
         final playerPowerups = powerupProvider.playerPowerups;
-        final screenHeight = MediaQuery.of(context).size.height;
-        final barHeight = screenHeight * 0.08;
 
         return Container(
-          height: barHeight,
           decoration: BoxDecoration(
             color: Colors.purple.withOpacity(0.1),
             border: Border(
@@ -28,8 +24,8 @@ class PowerupBar extends StatelessWidget {
               // Title bar
               Container(
                 height: 20,
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.flash_on, size: 12, color: Colors.purple),
@@ -52,7 +48,7 @@ class PowerupBar extends StatelessWidget {
                   childAspectRatio: 1,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  padding: EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
                   children: PowerupType.values.map((type) {
                     final count = _getPowerupCount(playerPowerups, type);
                     final isAvailable = count > 0;
@@ -60,7 +56,7 @@ class PowerupBar extends StatelessWidget {
                     return GestureDetector(
                       onTap: isAvailable ? () => _usePowerup(context, type, powerupProvider) : null,
                       child: Container(
-                        margin: EdgeInsets.all(2),
+                        margin: const EdgeInsets.all(2),
                         decoration: BoxDecoration(
                           color: isAvailable
                               ? _getPowerupColor(type).withOpacity(0.3)
@@ -73,38 +69,42 @@ class PowerupBar extends StatelessWidget {
                           ),
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              // Powerup icon
-                              Text(
-                                _getPowerupIcon(type),
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: isAvailable ? null : Colors.grey,
-                                ),
-                              ),
-                              // Count badge
-                              if (count > 0)
-                                Container(
-                                  padding: EdgeInsets.symmetric(horizontal: 3, vertical: 1),
-                                  decoration: BoxDecoration(
-                                    color: _getPowerupColor(type),
-                                    borderRadius: BorderRadius.circular(6),
+                        // BUG FIX 3: Replaced restrictive sizing with a responsive LayoutBuilder.
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final iconSize = constraints.maxHeight * 0.5;
+                            final badgeSize = constraints.maxHeight * 0.2;
+                            return Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                // Powerup icon
+                                Text(
+                                  _getPowerupIcon(type),
+                                  style: TextStyle(
+                                    fontSize: iconSize,
+                                    color: isAvailable ? null : Colors.grey,
                                   ),
-                                  child: Text(
-                                    count.toString(),
-                                    style: TextStyle(
-                                      fontSize: 8,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
+                                ),
+                                // Count badge
+                                if (count > 0)
+                                  Container(
+                                    padding: EdgeInsets.symmetric(horizontal: badgeSize * 0.3, vertical: badgeSize * 0.1),
+                                    decoration: BoxDecoration(
+                                      color: _getPowerupColor(type),
+                                      borderRadius: BorderRadius.circular(badgeSize),
+                                    ),
+                                    child: Text(
+                                      count.toString(),
+                                      style: TextStyle(
+                                        fontSize: badgeSize,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
                                     ),
                                   ),
-                                ),
-                            ],
-                          ),
+                              ],
+                            );
+                          },
                         ),
                       ),
                     );
@@ -154,11 +154,11 @@ class PowerupBar extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancel'),
+            child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Use'),
+            child: const Text('Use'),
             style: ElevatedButton.styleFrom(
               backgroundColor: _getPowerupColor(type),
               foregroundColor: Colors.white,
@@ -176,21 +176,21 @@ class PowerupBar extends StatelessWidget {
   Color _getPowerupColor(PowerupType type) {
     switch (type) {
       case PowerupType.revealTwoCells:
-        return Color(0xFF4CAF50); // Green
+        return const Color(0xFF4CAF50); // Green
       case PowerupType.freezeOpponent:
-        return Color(0xFF2196F3); // Blue
+        return const Color(0xFF2196F3); // Blue
       case PowerupType.extraHints:
-        return Color(0xFFFF9800); // Orange
+        return const Color(0xFFFF9800); // Orange
       case PowerupType.clearMistakes:
-        return Color(0xFF9C27B0); // Purple
+        return const Color(0xFF9C27B0); // Purple
       case PowerupType.timeBonus:
-        return Color(0xFFF44336); // Red
+        return const Color(0xFFF44336); // Red
       case PowerupType.showSolution:
-        return Color(0xFF607D8B); // Blue Grey
+        return const Color(0xFF607D8B); // Blue Grey
       case PowerupType.shield:
-        return Color(0xFF795548); // Brown
+        return const Color(0xFF795548); // Brown
       case PowerupType.bomb:
-        return Color(0xFFFF5722); // Deep Orange
+        return const Color(0xFFFF5722); // Deep Orange
     }
   }
 
