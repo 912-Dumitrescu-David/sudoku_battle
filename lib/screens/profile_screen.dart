@@ -8,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
 import 'package:profanity_filter/profanity_filter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // Import kIsWeb
 import '../providers/theme_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -29,6 +31,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _usernameController.text = user?.displayName ?? '';
   }
 
+  Future<void> _launchAPKUrl() async {
+    // Paste the Download URL from Firebase Storage here
+    final Uri apkUrl = Uri.parse('https://firebasestorage.googleapis.com/v0/b/sudoku-battle-cluj.firebasestorage.app/o/app-release.apk?alt=media&token=e0328e69-4623-4b98-a64a-9de93701eb8b');
+    if (!await launchUrl(apkUrl, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch download link.')),
+        );
+      }
+    }
+  }
+
   Future<bool> isUsernameAvailable(String username) async {
     final result = await FirebaseFirestore.instance
         .collection('users')
@@ -47,7 +61,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         throw Exception("Username must be between 3 and 15 characters.");
       }
 
-      // 1. Client-Side Profanity Check
       final filter = ProfanityFilter();
       if (filter.hasProfanity(username)) {
         throw Exception("This username is not allowed.");
@@ -76,7 +89,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await user.reload();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Username updated successfully!')),
+        const SnackBar(content: Text('Username updated successfully!')),
       );
 
       setState(() {
@@ -106,7 +119,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (originalImage == null) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not process image.')),
+          const SnackBar(content: Text('Could not process image.')),
         );
         return;
       }
@@ -144,7 +157,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          icon: Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back),
           onPressed: () {
             Navigator.pop(context, _profileChanged);
           },
@@ -152,7 +165,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: const Text('Profile'),
         actions: [
           IconButton(
-            icon: Icon(Icons.brightness_6),
+            icon: const Icon(Icons.brightness_6),
             tooltip: 'Toggle theme',
             onPressed: () {
               Provider.of<ThemeProvider>(context, listen: false).toggleTheme();
@@ -165,7 +178,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Profile Photo
               GestureDetector(
                 onTap: _pickAndUploadPhoto,
                 child: CircleAvatar(
@@ -179,10 +191,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              // Email
               Text(user?.email ?? 'No email', style: const TextStyle(fontSize: 16)),
               const SizedBox(height: 8),
-              // Username Edit
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: TextField(
@@ -192,15 +202,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              // Update Username Button
               _isLoading
                   ? const CircularProgressIndicator()
                   : ElevatedButton(
                 onPressed: _updateUsername,
                 child: const Text('Update Username'),
               ),
+              const SizedBox(height: 24),
+              const Divider(indent: 32, endIndent: 32),
               const SizedBox(height: 16),
-              // Sign Out Button
+              // --- UPDATED: Conditional Download Button ---
+              if (kIsWeb)
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.android),
+                  label: const Text('Download for Android'),
+                  onPressed: _launchAPKUrl,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.green,
+                    side: const BorderSide(color: Colors.green),
+                  ),
+                ),
+              // --- END UPDATE ---
+              const SizedBox(height: 16),
               ElevatedButton.icon(
                 icon: const Icon(Icons.logout),
                 label: const Text('Sign Out'),
@@ -209,7 +232,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 onPressed: () async {
                   await FirebaseAuth.instance.signOut();
-                  Navigator.of(context).popUntil((route) => route.isFirst);
+                  if (mounted) {
+                    Navigator.of(context).popUntil((route) => route.isFirst);
+                  }
                 },
               ),
             ],
