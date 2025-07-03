@@ -80,10 +80,10 @@ class SudokuBoard extends StatelessWidget {
               ),
             ),
 
-            if (isPowerupMode) ...[
-              if (isFrozen) FreezeOverlay(remainingSeconds: powerupProvider.freezeTimeRemaining),
-              if (shouldShowSolution) SolutionOverlay(solution: solution, remainingSeconds: powerupProvider.solutionShowTimeRemaining),
-            ],
+            // if (isPowerupMode) ...[
+            //   if (isFrozen) FreezeOverlay(remainingSeconds: powerupProvider.freezeTimeRemaining),
+            //   if (shouldShowSolution) SolutionOverlay(solution: solution, remainingSeconds: powerupProvider.solutionShowTimeRemaining),
+            // ],
           ],
         );
       },

@@ -354,10 +354,8 @@ class SudokuProvider extends ChangeNotifier {
       }
     }
 
-    if (cellsCleared > 0) {
       print('💣 Cleared $cellsCleared cells.');
       notifyListeners();
-    }
 
     return cellsCleared;
   }

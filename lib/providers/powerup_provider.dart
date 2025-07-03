@@ -20,6 +20,7 @@ class PowerupProvider extends ChangeNotifier {
 
   int _gameStartTime = 0;
   Timer? _spawnCheckTimer;
+  Timer? _effectUpdateTimer; // Timer to force UI updates for countdowns
 
   StreamSubscription? _spawnsSubscription;
   StreamSubscription? _powerupsSubscription;
@@ -119,6 +120,10 @@ class PowerupProvider extends ChangeNotifier {
           final newEffectsMap = {for (var e in effects) e.id: e};
           if (!const MapEquality().equals(newEffectsMap, _activeEffects)) {
             _activeEffects = newEffectsMap;
+            // ================== TIMER FIX IS HERE ==================
+            // When effects change, check if we need to start or stop the UI update timer.
+            _handleEffectTimers();
+            // =======================================================
             notifyListeners();
           }
         },
@@ -132,6 +137,26 @@ class PowerupProvider extends ChangeNotifier {
       print('❌ Error initializing PowerupProvider: $e');
     }
   }
+
+  // ================== TIMER FIX IS HERE ==================
+  // This method manages the timer that forces the UI to update for countdowns.
+  void _handleEffectTimers() {
+    final hasTimedEffect = _activeEffects.values.any((e) => (e.type == PowerupType.freezeOpponent || e.type == PowerupType.showSolution) && e.isActive && !e.isExpired);
+
+    if (hasTimedEffect && _effectUpdateTimer == null) {
+      // If there's a timed effect and the timer isn't running, start it.
+      print("⏰ Starting effect update timer.");
+      _effectUpdateTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        notifyListeners();
+      });
+    } else if (!hasTimedEffect && _effectUpdateTimer != null) {
+      // If there are no timed effects and the timer is running, stop it.
+      print("⏰ Stopping effect update timer.");
+      _effectUpdateTimer?.cancel();
+      _effectUpdateTimer = null;
+    }
+  }
+  // =======================================================
 
   void startGame() {
     if (!_isInitialized || _currentLobbyId == null) return;
@@ -390,80 +415,36 @@ class PowerupProvider extends ChangeNotifier {
   }
 
   int get freezeTimeRemaining {
-    final freezeEffect = _activeEffects.values.firstWhere(
+    final freezeEffect = _activeEffects.values.firstWhereOrNull(
           (effect) => effect.type == PowerupType.freezeOpponent &&
           effect.isActive &&
           !effect.isExpired,
-      orElse: () => PowerupEffect(
-        id: '',
-        type: PowerupType.freezeOpponent,
-        targetPlayerId: '',
-        sourcePlayerId: '',
-        appliedAt: DateTime.now(),
-      ),
     );
-
-    if (freezeEffect.id.isEmpty || freezeEffect.expiresAt == null) return 0;
-
+    if (freezeEffect == null || freezeEffect.expiresAt == null) return 0;
     final remaining = freezeEffect.expiresAt!.difference(DateTime.now()).inSeconds;
     return remaining > 0 ? remaining : 0;
   }
 
   int get solutionShowTimeRemaining {
-    final solutionEffect = _activeEffects.values.firstWhere(
+    final solutionEffect = _activeEffects.values.firstWhereOrNull(
           (effect) => effect.type == PowerupType.showSolution &&
           effect.isActive &&
           !effect.isExpired,
-      orElse: () => PowerupEffect(
-        id: '',
-        type: PowerupType.showSolution,
-        targetPlayerId: '',
-        sourcePlayerId: '',
-        appliedAt: DateTime.now(),
-      ),
     );
-
-    if (solutionEffect.id.isEmpty || solutionEffect.expiresAt == null) return 0;
-
+    if (solutionEffect == null || solutionEffect.expiresAt == null) return 0;
     final remaining = solutionEffect.expiresAt!.difference(DateTime.now()).inSeconds;
     return remaining > 0 ? remaining : 0;
   }
 
   void updatePositionsWithCurrentBoard(List<List<int?>> board, List<List<bool>> givenCells) {
-    print('🎯 Updating powerup positions with current board state');
-
-    if (!_isInitialized) {
-      print("DEBUG: updatePositionsWithCurrentBoard exited because provider is not initialized.");
-      return;
-    }
-
+    if (!_isInitialized) return;
     updatePowerupPositions(board, givenCells);
-
-    print('📍 Calculated positions:');
-    _localPowerupPositions.entries.forEach((entry) {
-      final powerupId = entry.key;
-      final position = entry.value;
-      final spawn = _powerupSpawns[powerupId];
-      if (spawn != null) {
-        print('   ${spawn.type} -> (${position['row']}, ${position['col']})');
-      }
-    });
-
     notifyListeners();
-
   }
+
   void _triggerPositionUpdate() {
-    print('🎯 Triggering position update for ${_powerupSpawns.length} spawns');
     _sudokuProviderCallback?.call('updatePowerupPositions');
   }
-
-  void _triggerSudokuProviderUpdate() {
-    if (_sudokuProviderCallback != null) {
-      print('🔄 Forcing SudokuProvider UI update');
-      _sudokuProviderCallback!('forceUIUpdate');
-    }
-  }
-
 
   @override
   void dispose() {
@@ -474,18 +455,16 @@ class PowerupProvider extends ChangeNotifier {
 
   Future<void> _resetState() async {
     print('🔄 Resetting PowerupProvider state...');
-
     _spawnsSubscription?.cancel();
     _powerupsSubscription?.cancel();
     _effectsSubscription?.cancel();
     _cleanupTimer?.cancel();
     _spawnCheckTimer?.cancel();
-
+    _effectUpdateTimer?.cancel();
     _powerupSpawns.clear();
     _playerPowerups.clear();
     _activeEffects.clear();
     _localPowerupPositions.clear();
-
     _isInitialized = false;
     _currentLobbyId = null;
     _currentPlayerId = null;

@@ -47,10 +47,12 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
   bool _timeUp = false;
   late Offset _hintButtonOffset;
 
+  // --- BOMB EFFECT STATE VARIABLES ---
   PowerupEffect? _activeBombEffect;
   bool _isBombExploding = false;
   int _bombCellsDestroyed = 0;
   final Set<String> _processedEffectIds = {};
+  // ------------------------------------
 
   Map<String, PlayerGameState> _opponentStates = {};
   StreamSubscription? _gameStatesSubscription;
@@ -60,14 +62,6 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
   @override
   void initState() {
     super.initState();
-
-    // ================== BUG FIX IS HERE ==================
-    // Call the new reset method at the very beginning of initState.
-    // This guarantees the provider is in a clean state before the game starts.
-    // We use context.read() here which is the same as Provider.of(..., listen: false)
-    context.read<SudokuProvider>().resetGame();
-    // =====================================================
-
     _stopwatch = Stopwatch();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && _gameStarted && !_gameEnded) {
@@ -188,6 +182,8 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     final sudokuProvider = Provider.of<SudokuProvider>(context, listen: false);
     final powerupProvider = Provider.of<PowerupProvider>(context, listen: false);
 
+    sudokuProvider.resetGame();
+
     sudokuProvider.setLobbyId(widget.lobby.id);
 
     final screenWidth = MediaQuery.of(context).size.width;
@@ -199,9 +195,10 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
       powerupProvider.initialize(widget.lobby.id);
       sudokuProvider.initializePowerups(powerupProvider);
     }
-    // This callback is now used for both ranked and casual games
-    sudokuProvider.setGameLostCallback(_handleLocalPlayerLoss);
 
+    if (widget.lobby.gameMode != GameMode.coop) {
+      sudokuProvider.setGameLostCallback(_handleLocalPlayerLoss);
+    }
 
     sudokuProvider.loadPuzzle(
       widget.puzzle,
@@ -238,12 +235,28 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
     if (mounted) {
       setState(() => _gameEnded = true);
     }
+
+    final sudokuProvider = context.read<SudokuProvider>();
+    sudokuProvider.resetGame();
   }
 
   Future<void> _handleCoOpGameEnd(bool isWin, SudokuProvider provider) async {
     if (_gameEnded) return;
     _stopGame();
     final playerSolveCounts = provider.getPlayerSolveCounts();
+
+    // Determine the reason for game ending
+    String? reason;
+    if (!isWin) {
+      if (_timeUp) {
+        reason = "Timeout";
+      } else if (provider.mistakesCount >= provider.maxMistakes) {
+        reason = "Too many mistakes";
+      } else {
+        reason = "Game ended";
+      }
+    }
+
     if (mounted) {
       Navigator.pushReplacement(
         context,
@@ -255,6 +268,7 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
             totalToSolve: _calculateTotalToSolve(),
             lobby: widget.lobby,
             playerSolveCounts: playerSolveCounts,
+            reason: reason, // Add this parameter
           ),
         ),
       );
@@ -378,6 +392,27 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
 
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
+
+            // --- BOMB EFFECT HANDLING ---
+            if (powerupProvider.hasBombEffect) {
+              final activeBombEffects = powerupProvider.activeEffects.where(
+                      (e) => e.type == PowerupType.bomb && e.isActive && !_processedEffectIds.contains(e.id)
+              ).toList();
+
+              if (activeBombEffects.isNotEmpty) {
+                final bombEffect = activeBombEffects.first;
+                _processedEffectIds.add(bombEffect.id);
+                final cellsDestroyed = sudokuProvider.applyBombEffect(bombEffect.data);
+
+                setState(() {
+                  _activeBombEffect = bombEffect;
+                  _bombCellsDestroyed = cellsDestroyed;
+                  _isBombExploding = true;
+                });
+              }
+            }
+            // --------------------------
+
             if (widget.lobby.gameMode == GameMode.coop && currentLobby != null) {
               sudokuProvider.updateSharedHints(currentLobby.sharedHintCount);
               sudokuProvider.updateSharedMistakes(currentLobby.sharedMistakeCount);
@@ -485,7 +520,16 @@ class _MultiplayerSudokuScreenState extends State<MultiplayerSudokuScreen> {
                     startRow: _activeBombEffect?.data['startRow'] ?? 0,
                     startCol: _activeBombEffect?.data['startCol'] ?? 0,
                     cellsDestroyed: _bombCellsDestroyed,
-                    onComplete: () {},
+                    onComplete: () {
+                      if (_activeBombEffect != null) {
+                        powerupProvider.markBombEffectAsHandled(_activeBombEffect!.id);
+                      }
+                      setState(() {
+                        _isBombExploding = false;
+                        _activeBombEffect = null;
+                        _bombCellsDestroyed = 0;
+                      });
+                    },
                   ),
               ],
             ),

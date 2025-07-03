@@ -21,10 +21,10 @@ class _FreezeOverlayState extends State<FreezeOverlay>
   void initState() {
     super.initState();
     _animationController = AnimationController(
-      duration: Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 1000),
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+    _scaleAnimation = Tween<double>(begin: 0.9, end: 1.1).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
     _animationController.repeat(reverse: true);
@@ -38,58 +38,97 @@ class _FreezeOverlayState extends State<FreezeOverlay>
 
   @override
   Widget build(BuildContext context) {
+    // Use Positioned.fill to ensure it covers the entire screen without affecting layout
     return Positioned.fill(
-      child: Container(
-        color: Colors.blue.withOpacity(0.1),
-        child: Center(
-          child: AnimatedBuilder(
-            animation: _scaleAnimation,
-            builder: (context, child) {
-              return Transform.scale(
-                scale: _scaleAnimation.value,
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.95),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 10,
-                        spreadRadius: 2,
+      child: IgnorePointer(
+        child: Container(
+          // Light blue tint over everything
+          color: Colors.lightBlue.withOpacity(0.2),
+          child: Center(
+            child: AnimatedBuilder(
+              animation: _scaleAnimation,
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: _scaleAnimation.value,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade700.withOpacity(0.95),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.lightBlue.shade300,
+                        width: 3,
                       ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '❄️',
-                        style: TextStyle(fontSize: 32),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'FROZEN!',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.blue.withOpacity(0.4),
+                          blurRadius: 20,
+                          spreadRadius: 5,
                         ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        '${widget.remainingSeconds}s',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Rotating snowflake
+                        AnimatedBuilder(
+                          animation: _animationController,
+                          builder: (context, child) {
+                            return Transform.rotate(
+                              angle: _animationController.value * 0.5,
+                              child: const Text(
+                                '❄️',
+                                style: TextStyle(fontSize: 40),
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 12),
+                        const Text(
+                          'FROZEN!',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        // Countdown timer
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            '${widget.remainingSeconds}s',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'You cannot move!',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.white.withOpacity(0.9),
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -111,43 +150,19 @@ class SolutionOverlay extends StatefulWidget {
   State<SolutionOverlay> createState() => _SolutionOverlayState();
 }
 
-class _SolutionOverlayState extends State<SolutionOverlay>
-    with TickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _opacityAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      duration: Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _opacityAnimation = Tween<double>(begin: 0.0, end: 0.8).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
-    );
-    _animationController.forward();
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
-
+class _SolutionOverlayState extends State<SolutionOverlay> {
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _opacityAnimation,
-      builder: (context, child) {
-        return Container(
-          color: Colors.grey.withOpacity(_opacityAnimation.value * 0.9),
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Container(
+          color: Colors.black.withOpacity(0.75),
           child: Center(
             child: Container(
-              padding: EdgeInsets.all(16),
-              margin: EdgeInsets.all(20),
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Theme.of(context).cardColor,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Colors.purple, width: 3),
               ),
@@ -157,12 +172,9 @@ class _SolutionOverlayState extends State<SolutionOverlay>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        '👁️',
-                        style: TextStyle(fontSize: 24),
-                      ),
-                      SizedBox(width: 8),
-                      Text(
+                      const Text('👁️', style: TextStyle(fontSize: 24)),
+                      const SizedBox(width: 8),
+                      const Text(
                         'SOLUTION REVEALED',
                         style: TextStyle(
                           fontSize: 18,
@@ -170,16 +182,16 @@ class _SolutionOverlayState extends State<SolutionOverlay>
                           color: Colors.purple,
                         ),
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: Colors.red,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
                           '${widget.remainingSeconds}s',
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
@@ -188,18 +200,18 @@ class _SolutionOverlayState extends State<SolutionOverlay>
                       ),
                     ],
                   ),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
                   AspectRatio(
                     aspectRatio: 1,
                     child: Container(
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.purple, width: 2),
+                        border: Border.all(color: Colors.purple.withOpacity(0.5), width: 2),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: GridView.builder(
                         shrinkWrap: true,
-                        physics: NeverScrollableScrollPhysics(),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 9,
                         ),
                         itemCount: 81,
@@ -207,12 +219,11 @@ class _SolutionOverlayState extends State<SolutionOverlay>
                           final row = index ~/ 9;
                           final col = index % 9;
                           final number = widget.solution[row][col];
-
                           return Container(
                             decoration: BoxDecoration(
                               border: Border.all(
-                                color: Colors.grey,
-                                width: (row % 3 == 0 || col % 3 == 0) ? 1 : 0.5,
+                                color: Colors.grey.withOpacity(0.3),
+                                width: (row % 3 == 2 || col % 3 == 2) ? 1.5 : 0.5,
                               ),
                             ),
                             child: Center(
@@ -221,7 +232,7 @@ class _SolutionOverlayState extends State<SolutionOverlay>
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.purple,
+                                  color: Theme.of(context).textTheme.bodyLarge?.color,
                                 ),
                               ),
                             ),
@@ -234,8 +245,8 @@ class _SolutionOverlayState extends State<SolutionOverlay>
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

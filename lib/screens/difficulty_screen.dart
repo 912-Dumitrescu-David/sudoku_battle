@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../providers/sudoku_provider.dart';
 import '../providers/theme_provider.dart';
 import 'sudoku_screen.dart';
 
@@ -14,6 +15,15 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
   bool _allowHints = true;
   bool _allowMistakes = true;
   int _maxMistakes = 3;
+
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SudokuProvider>().resetGame();
+    });
+  }
 
   int _emptyCellsCount(String difficulty) {
     switch (difficulty) {
@@ -31,6 +41,9 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
   }
 
   void _startGame(BuildContext context, String difficulty) {
+
+    context.read<SudokuProvider>().resetGame();
+
     int emptyCells = _emptyCellsCount(difficulty);
     Navigator.push(
       context,

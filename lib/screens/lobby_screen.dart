@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/lobby_model.dart';
 import '../providers/lobby_provider.dart';
+import '../providers/sudoku_provider.dart';
 import '../services/lobby_service.dart';
 import '../utils/sudoku_engine.dart';
 import '../widgets/lobby_card.dart';
@@ -24,6 +25,10 @@ class _LobbyScreenState extends State<LobbyScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+
+      context.read<LobbyProvider>().forceCleanupLobbyState();
+      context.read<SudokuProvider>().resetGame();
+
       context.read<LobbyProvider>().initialize();
       _checkForExistingLobby();
 

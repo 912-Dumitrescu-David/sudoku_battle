@@ -59,6 +59,9 @@ class _SudokuScreenState extends State<SudokuScreen> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+
+      context.read<SudokuProvider>().resetGame();
+
       final screenWidth = MediaQuery.of(context).size.width;
       setState(() {
         _hintButtonOffset = Offset(screenWidth * 0.85, 130);
@@ -95,7 +98,10 @@ class _SudokuScreenState extends State<SudokuScreen> {
   }
 
   void _resetGame() {
+
     final sudokuProvider = Provider.of<SudokuProvider>(context, listen: false);
+    sudokuProvider.resetGame();
+
 
     final gameSettings = GameSettings(
       timeLimit: null,
